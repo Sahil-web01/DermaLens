@@ -1,0 +1,13 @@
+# Core API & Inference Dependencies
+fastapi
+uvicorn
+python-multipart
+tensorflow
+Pillow
+numpy
+
+# Model Training & Evaluation Dependencies
+pandas
+scikit-learn
+matplotlib
+seaborn
