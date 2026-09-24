@@ -37,13 +37,24 @@ function LoginForm() {
   const [isLoading, setIsLoading] = useState(false)
   const [formError, setFormError] = useState('')
   const [formSuccess, setFormSuccess] = useState('')
+  const [existingAccountFound, setExistingAccountFound] = useState(false)
+
+  const switchMode = (newMode: 'signin' | 'signup' | 'reset') => {
+    setMode(newMode)
+    setFormError('')
+    setFormSuccess('')
+    setExistingAccountFound(false)
+    if (typeof window !== 'undefined' && window.location.search.includes('error=')) {
+      window.history.replaceState(null, '', window.location.pathname + (newMode !== 'signin' ? `?mode=${newMode}` : ''))
+    }
+  }
 
   // Update mode if URL query param changes
   useEffect(() => {
     if (searchParams?.get('mode') === 'signup') {
-      setMode('signup')
+      switchMode('signup')
     } else if (searchParams?.get('mode') === 'reset') {
-      setMode('reset')
+      switchMode('reset')
     }
   }, [searchParams])
 
@@ -153,12 +164,17 @@ function LoginForm() {
       const data = await res.json()
 
       if (!res.ok) {
-        setFormError(data.error || 'Failed to create account.')
+        if (data.alreadyExists) {
+          setExistingAccountFound(true)
+          setFormError('An account with this email already exists. Click "Sign In with this password" or "Set this password & Sign In" below.')
+        } else {
+          setFormError(data.error || 'Failed to create account.')
+        }
         setIsLoading(false)
         return
       }
 
-      setFormSuccess('Account created successfully! Signing you in...')
+      setFormSuccess('Account ready! Signing you in...')
 
       // 2. Automatically log the new user in
       const signInResult = await signIn('credentials', {
@@ -169,8 +185,8 @@ function LoginForm() {
 
       if (signInResult?.error) {
         // Fallback: switch to signin tab with filled email
-        setMode('signin')
-        setFormSuccess('Account registered. Please enter your password to sign in.')
+        switchMode('signin')
+        setFormSuccess('Account recognized. Please enter your password to sign in.')
       } else {
         await syncBackendAuthToken(email.trim().toLowerCase(), password)
         const dest = role === 'CLINICIAN' ? '/clinician' : '/patient'
@@ -235,7 +251,7 @@ function LoginForm() {
       })
 
       if (signInResult?.error) {
-        setMode('signin')
+        switchMode('signin')
         setPassword(resetPassword)
         setFormSuccess('Password reset! Please click Sign In with your new password below.')
       } else {
@@ -257,11 +273,14 @@ function LoginForm() {
   }
 
   const handleDemoClick = (cred: typeof demoCredentials[0]) => {
-    setMode('signin')
+    switchMode('signin')
     setEmail(cred.email)
     setPassword(cred.password)
     setFormError('')
   }
+
+  const urlSigninError = mode === 'signin' && error ? 'Invalid email or password. Please verify your credentials or click "Create Account" below.' : ''
+  const displayError = formError || urlSigninError
 
   return (
     <div className="min-h-screen flex items-center justify-center px-4 py-12 bg-muted/30">
@@ -297,11 +316,7 @@ function LoginForm() {
           <div className="grid grid-cols-2 p-1 bg-muted rounded-xl">
             <button
               type="button"
-              onClick={() => {
-                setMode('signin')
-                setFormError('')
-                setFormSuccess('')
-              }}
+              onClick={() => switchMode('signin')}
               className={cn(
                 'py-2 text-sm font-semibold rounded-lg transition-all',
                 mode === 'signin' || mode === 'reset'
@@ -313,11 +328,7 @@ function LoginForm() {
             </button>
             <button
               type="button"
-              onClick={() => {
-                setMode('signup')
-                setFormError('')
-                setFormSuccess('')
-              }}
+              onClick={() => switchMode('signup')}
               className={cn(
                 'py-2 text-sm font-semibold rounded-lg transition-all',
                 mode === 'signup'
@@ -330,9 +341,70 @@ function LoginForm() {
           </div>
 
           {/* Feedback Messages */}
-          {(error || formError) && (
-            <div className="rounded-lg bg-rose-50 border border-rose-200 p-3.5 text-xs text-rose-800" role="alert">
-              {formError || 'Invalid credentials. Please verify your email and password.'}
+          {displayError && (
+            <div className="rounded-lg bg-rose-50 border border-rose-200 p-3.5 text-xs text-rose-800 space-y-2.5" role="alert">
+              <div>{displayError}</div>
+              {existingAccountFound && (
+                <div className="pt-2 border-t border-rose-200 flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      setIsLoading(true)
+                      setFormError('')
+                      const res = await signIn('credentials', {
+                        email: email.trim().toLowerCase(),
+                        password,
+                        redirect: false,
+                      })
+                      if (res?.error) {
+                        setFormError('Invalid password for this account. Click "Set this password & Sign In" below to update it.')
+                        setIsLoading(false)
+                      } else {
+                        await syncBackendAuthToken(email.trim().toLowerCase(), password)
+                        window.location.href = role === 'CLINICIAN' ? '/clinician' : '/patient'
+                      }
+                    }}
+                    className="px-2.5 py-1 rounded bg-rose-700 hover:bg-rose-800 text-white font-medium text-[11px] transition-colors"
+                  >
+                    Sign In with this password
+                  </button>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      setIsLoading(true)
+                      setFormError('')
+                      try {
+                        const resetRes = await fetch('/api/auth/reset-password', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ email: email.trim().toLowerCase(), newPassword: password }),
+                        })
+                        if (resetRes.ok) {
+                          setFormSuccess('Password updated! Signing in...')
+                          const sRes = await signIn('credentials', {
+                            email: email.trim().toLowerCase(),
+                            password,
+                            redirect: false,
+                          })
+                          if (!sRes?.error) {
+                            await syncBackendAuthToken(email.trim().toLowerCase(), password)
+                            window.location.href = role === 'CLINICIAN' ? '/clinician' : '/patient'
+                            return
+                          }
+                        }
+                        switchMode('signin')
+                      } catch {
+                        setFormError('Failed to synchronize password.')
+                      } finally {
+                        setIsLoading(false)
+                      }
+                    }}
+                    className="px-2.5 py-1 rounded border border-rose-300 text-rose-900 bg-white hover:bg-rose-50 font-medium text-[11px] transition-colors"
+                  >
+                    Set this password &amp; Sign In
+                  </button>
+                </div>
+              )}
             </div>
           )}
 
@@ -440,11 +512,7 @@ function LoginForm() {
               <div className="text-center pt-2">
                 <button
                   type="button"
-                  onClick={() => {
-                    setMode('signin')
-                    setFormError('')
-                    setFormSuccess('')
-                  }}
+                  onClick={() => switchMode('signin')}
                   className="text-xs font-semibold text-primary hover:underline inline-flex items-center gap-1"
                 >
                   &larr; Back to Sign In
@@ -482,9 +550,7 @@ function LoginForm() {
                   <button
                     type="button"
                     onClick={() => {
-                      setMode('reset')
-                      setFormError('')
-                      setFormSuccess('')
+                      switchMode('reset')
                       setResetPassword('')
                       setConfirmResetPassword('')
                     }}
@@ -533,10 +599,7 @@ function LoginForm() {
                 <span className="text-xs text-muted-foreground">Don&apos;t have an account? </span>
                 <button
                   type="button"
-                  onClick={() => {
-                    setMode('signup')
-                    setFormError('')
-                  }}
+                  onClick={() => switchMode('signup')}
                   className="text-xs font-semibold text-primary hover:underline"
                 >
                   Create one now
@@ -697,10 +760,7 @@ function LoginForm() {
                 <span className="text-xs text-muted-foreground">Already have an account? </span>
                 <button
                   type="button"
-                  onClick={() => {
-                    setMode('signin')
-                    setFormError('')
-                  }}
+                  onClick={() => switchMode('signin')}
                   className="text-xs font-semibold text-primary hover:underline"
                 >
                   Sign in
