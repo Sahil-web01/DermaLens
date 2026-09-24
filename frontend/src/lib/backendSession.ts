@@ -16,7 +16,7 @@ export function getBackendAuthHeaders(session: Session | null | undefined): Head
 
 /** After NextAuth login, obtain matching Express JWT for protected MongoDB routes. */
 export async function syncBackendAuthToken(email: string, password: string): Promise<void> {
-  const apiBase = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api'
+  const apiBase = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api').replace(/\/$/, '')
   try {
     const res = await fetch(`${apiBase}/auth/login`, {
       method: 'POST',

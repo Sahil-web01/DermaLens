@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { hash } from 'bcryptjs'
 import { prisma } from '@/lib/prisma'
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api'
+const API_BASE = (process.env.BACKEND_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api').replace(/\/$/, '')
 
 export const dynamic = 'force-dynamic'
 
@@ -39,7 +39,7 @@ export async function POST(request: NextRequest) {
     // 1. Check if user already exists in Prisma SQLite
     const existingUser = await prisma.user.findUnique({
       where: { email: normalizedEmail },
-    })
+    }).catch(() => null)
 
     if (existingUser) {
       return NextResponse.json(
@@ -50,20 +50,31 @@ export async function POST(request: NextRequest) {
 
     // 2. Hash password
     const hashedPassword = await hash(password, 10)
+    let createdUser: { id: string; name: string; email: string; role: string } | null = null
 
     // 3. Create user in Prisma
-    const newUser = await prisma.user.create({
-      data: {
-        name: name.trim(),
-        email: normalizedEmail,
-        password: hashedPassword,
-        role: userRole,
-      },
-    })
-
-    // 4. Also synchronize registration with Express backend MongoDB (best-effort)
     try {
-      await fetch(`${API_BASE}/auth/register`, {
+      const newUser = await prisma.user.create({
+        data: {
+          name: name.trim(),
+          email: normalizedEmail,
+          password: hashedPassword,
+          role: userRole,
+        },
+      })
+      createdUser = {
+        id: newUser.id,
+        name: newUser.name,
+        email: newUser.email,
+        role: newUser.role,
+      }
+    } catch (prismaErr) {
+      console.warn('[Register] Prisma create warning (falling back to backend):', prismaErr)
+    }
+
+    // 4. Also synchronize registration with Express backend MongoDB
+    try {
+      const backendRes = await fetch(`${API_BASE}/auth/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -73,6 +84,26 @@ export async function POST(request: NextRequest) {
           role: userRole,
         }),
       })
+
+      if (backendRes.ok) {
+        const backendData = await backendRes.json()
+        if (backendData.user && !createdUser) {
+          createdUser = {
+            id: String(backendData.user.id || backendData.user._id || normalizedEmail),
+            name: backendData.user.name || name.trim(),
+            email: normalizedEmail,
+            role: userRole,
+          }
+        }
+      } else if (backendRes.status === 400 || backendRes.status === 409) {
+        const errData = await backendRes.json().catch(() => null)
+        if (errData?.message?.includes('already exists') && !createdUser) {
+          return NextResponse.json(
+            { error: 'An account with this email already exists. Please sign in.' },
+            { status: 409 }
+          )
+        }
+      }
 
       // If registered as patient, also create a patient profile in MongoDB if needed
       if (userRole === 'PATIENT') {
@@ -90,20 +121,21 @@ export async function POST(request: NextRequest) {
         }).catch(() => {})
       }
     } catch (err) {
-      // Backend sync error should not prevent user creation
-      console.warn('Backend sync warning on register:', err)
+      console.warn('[Register] Backend sync warning on register:', err)
+    }
+
+    if (!createdUser) {
+      return NextResponse.json(
+        { error: 'Failed to create account. Please check your connection and try again.' },
+        { status: 500 }
+      )
     }
 
     return NextResponse.json(
       {
         success: true,
         message: 'Account created successfully.',
-        user: {
-          id: newUser.id,
-          name: newUser.name,
-          email: newUser.email,
-          role: newUser.role,
-        },
+        user: createdUser,
       },
       { status: 201 }
     )

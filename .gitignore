@@ -66,4 +66,6 @@ backend/uploads/*
 
 # SQLite database
 *.db
-*.db-journal
+*.db-journal
+!frontend/prisma/dev.db
+

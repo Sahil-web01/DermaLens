@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { hash } from 'bcryptjs'
 import { prisma } from '@/lib/prisma'
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api'
+const API_BASE = (process.env.BACKEND_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api').replace(/\/$/, '')
 
 export const dynamic = 'force-dynamic'
 
@@ -32,29 +32,35 @@ export async function POST(request: NextRequest) {
 
     const hashedPassword = await hash(newPassword, 10)
 
-    // 1. Update Prisma SQLite
-    const existingUsers = await prisma.user.findMany({
-      where: { email: { in: candidateEmails } },
-    })
-
-    if (existingUsers.length > 0) {
-      for (const u of existingUsers) {
-        await prisma.user.update({
-          where: { id: u.id },
-          data: { password: hashedPassword },
-        })
-      }
-    } else {
-      // Create user if not present
-      await prisma.user.create({
-        data: {
-          name: normalizedEmail.split('@')[0],
-          email: normalizedEmail,
-          password: hashedPassword,
-          role: 'PATIENT',
-        },
+    // 1. Update Prisma SQLite safely
+    let existingUsers: any[] = []
+    try {
+      existingUsers = await prisma.user.findMany({
+        where: { email: { in: candidateEmails } },
       })
+
+      if (existingUsers.length > 0) {
+        for (const u of existingUsers) {
+          await prisma.user.update({
+            where: { id: u.id },
+            data: { password: hashedPassword },
+          }).catch(() => {})
+        }
+      } else {
+        // Create user if not present
+        await prisma.user.create({
+          data: {
+            name: normalizedEmail.split('@')[0],
+            email: normalizedEmail,
+            password: hashedPassword,
+            role: 'PATIENT',
+          },
+        }).catch(() => {})
+      }
+    } catch (prismaErr) {
+      console.warn('[ResetPassword] Prisma update warning (continuing to backend):', prismaErr)
     }
+
 
     // Ensure both sahil@gmail.com and sahildh@gmail.com are present in Prisma
     if (candidateEmails.length > 1) {
