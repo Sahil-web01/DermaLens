@@ -126,21 +126,26 @@ export default function PatientDashboard() {
   }, [session, loadData])
 
   const handleAcceptOffer = async () => {
-    if (!patient?._id && !session?.user?.email) return
     setActionLoading(true)
     setActionNotice(null)
     try {
-      const idOrEndpoint = patient?._id || 'patient-consent'
-      const res = await fetch(`${getApiBase()}/patients/${idOrEndpoint}/patient-consent`, {
+      const email =
+        session?.user?.email ||
+        (typeof window !== 'undefined' ? localStorage.getItem('dermalens_user_email') : '') ||
+        patient?.email ||
+        'patient@demo.com'
+
+      const res = await fetch(`${getApiBase()}/patients/patient-consent`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'accept',
-          email: session?.user?.email,
+          email,
+          patientId: patient?._id || patient?.id,
         }),
       })
       const data = await res.json()
-      if (res.ok) {
+      if (res.ok && data.success !== false) {
         setActionNotice({ type: 'success', text: data.message || 'Physician care offer accepted!' })
         await loadData()
       } else {
@@ -154,22 +159,27 @@ export default function PatientDashboard() {
   }
 
   const handleDeclineOffer = async () => {
-    if (!patient?._id && !session?.user?.email) return
     if (!window.confirm('Are you sure you want to decline this doctor? You will be able to choose another physician.')) return
     setActionLoading(true)
     setActionNotice(null)
     try {
-      const idOrEndpoint = patient?._id || 'patient-consent'
-      const res = await fetch(`${getApiBase()}/patients/${idOrEndpoint}/patient-consent`, {
+      const email =
+        session?.user?.email ||
+        (typeof window !== 'undefined' ? localStorage.getItem('dermalens_user_email') : '') ||
+        patient?.email ||
+        'patient@demo.com'
+
+      const res = await fetch(`${getApiBase()}/patients/patient-consent`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'decline',
-          email: session?.user?.email,
+          email,
+          patientId: patient?._id || patient?.id,
         }),
       })
       const data = await res.json()
-      if (res.ok) {
+      if (res.ok && data.success !== false) {
         setActionNotice({ type: 'success', text: 'Care offer declined. Please select your preferred doctor.' })
         await loadData()
         setIsModalOpen(true)
@@ -187,21 +197,39 @@ export default function PatientDashboard() {
     setActionLoading(true)
     setActionNotice(null)
     try {
-      const idOrEndpoint = patient?._id || 'request-doctor'
-      const res = await fetch(`${getApiBase()}/patients/${idOrEndpoint}/request-doctor`, {
+      const email =
+        session?.user?.email ||
+        (typeof window !== 'undefined' ? localStorage.getItem('dermalens_user_email') : '') ||
+        patient?.email ||
+        'patient@demo.com'
+
+      const res = await fetch(`${getApiBase()}/patients/request-doctor`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           clinicianId,
-          email: session?.user?.email,
+          doctorName,
+          email,
+          patientId: patient?._id || patient?.id,
         }),
       })
       const data = await res.json()
-      if (res.ok) {
+      if (res.ok && data.success !== false) {
         setActionNotice({
           type: 'success',
-          text: `Care request sent to ${doctorName}! Awaiting physician clinical consent.`,
+          text: `Care request sent to ${doctorName}! They are now assigned to your post-op care.`,
         })
+        setPatient((prev: any) => ({
+          ...prev,
+          ...(data.patient || {}),
+          assignedClinicianId: clinicianId,
+          assignedClinician: {
+            id: clinicianId,
+            name: doctorName,
+            email: clinicianId.includes('@') ? clinicianId : 'clinician@demo.com',
+          },
+          assignmentStatus: 'assigned',
+        }))
         await loadData()
       } else {
         setActionNotice({ type: 'error', text: data.message || 'Failed to submit request.' })
@@ -218,17 +246,29 @@ export default function PatientDashboard() {
     setActionLoading(true)
     setActionNotice(null)
     try {
-      const idOrEndpoint = patient?._id || 'release-doctor'
-      const res = await fetch(`${getApiBase()}/patients/${idOrEndpoint}/release-doctor`, {
+      const email =
+        session?.user?.email ||
+        (typeof window !== 'undefined' ? localStorage.getItem('dermalens_user_email') : '') ||
+        patient?.email ||
+        'patient@demo.com'
+
+      const res = await fetch(`${getApiBase()}/patients/release-doctor`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          email: session?.user?.email,
+          email,
+          patientId: patient?._id || patient?.id,
         }),
       })
       const data = await res.json()
-      if (res.ok) {
+      if (res.ok && data.success !== false) {
         setActionNotice({ type: 'success', text: 'Doctor assignment released. You may choose a new physician.' })
+        setPatient((prev: any) => ({
+          ...prev,
+          assignedClinicianId: null,
+          assignedClinician: null,
+          assignmentStatus: 'unassigned',
+        }))
         await loadData()
         setIsModalOpen(true)
       } else {
