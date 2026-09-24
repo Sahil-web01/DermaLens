@@ -58,8 +58,12 @@ export async function POST(request: NextRequest) {
     }
 
     // 2. Local Fallback via Prisma SQLite
+    const candidateEmails = [email]
+    if (email === 'sahil@gmail.com') candidateEmails.push('sahildh@gmail.com')
+    if (email === 'sahildh@gmail.com') candidateEmails.push('sahil@gmail.com')
+
     let patient = await prisma.user.findFirst({
-      where: { email },
+      where: { email: { in: candidateEmails } },
       include: {
         patientEpisodes: true,
         assignedClinician: true,
@@ -103,12 +107,29 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    // Convert photo to Base64 Data URL if uploaded
+    // Process uploaded photo: write to public/uploads or convert to Data URI
     let imageUrl = '/uploads/demo_david_day3.png'
     if (photoFile && photoFile.size > 0) {
-      const buffer = await photoFile.arrayBuffer()
-      const base64 = Buffer.from(buffer).toString('base64')
-      imageUrl = `data:${photoFile.type || 'image/jpeg'};base64,${base64}`
+      try {
+        const buffer = Buffer.from(await photoFile.arrayBuffer())
+        const ext = photoFile.name ? photoFile.name.split('.').pop() || 'jpg' : 'jpg'
+        const filename = `checkin_${Date.now()}_${Math.floor(Math.random() * 10000)}.${ext}`
+        
+        // Attempt saving to public/uploads if accessible
+        const fs = require('fs')
+        const path = require('path')
+        const uploadDir = path.join(process.cwd(), 'public', 'uploads')
+        if (fs.existsSync(uploadDir)) {
+          const filePath = path.join(uploadDir, filename)
+          fs.writeFileSync(filePath, buffer)
+          imageUrl = `/uploads/${filename}`
+        } else {
+          imageUrl = `data:${photoFile.type || 'image/jpeg'};base64,${buffer.toString('base64')}`
+        }
+      } catch {
+        const buffer = Buffer.from(await photoFile.arrayBuffer())
+        imageUrl = `data:${photoFile.type || 'image/jpeg'};base64,${buffer.toString('base64')}`
+      }
     }
 
     // Calculate AI concern score & classification based on clinical risk indicators

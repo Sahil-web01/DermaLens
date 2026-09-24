@@ -25,7 +25,7 @@ export function getApiBase(): string {
  */
 export function resolvePhotoUrl(photoUrl: string | null | undefined): string {
   if (!photoUrl) return ''
-  if (photoUrl.startsWith('http://') || photoUrl.startsWith('https://')) return photoUrl
+  if (photoUrl.startsWith('http://') || photoUrl.startsWith('https://') || photoUrl.startsWith('data:')) return photoUrl
   
   const apiBase = getApiBase()
   // When running on Vercel or same-origin /api, serve /uploads directly from public folder

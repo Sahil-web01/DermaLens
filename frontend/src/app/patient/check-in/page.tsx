@@ -22,6 +22,65 @@ import {
   Info,
 } from 'lucide-react'
 import { getApiBase } from '@/lib/apiConfig'
+import { getBackendAuthHeaders } from '@/lib/backendSession'
+
+async function compressImageIfNeeded(file: File): Promise<File> {
+  if (file.size <= 1.5 * 1024 * 1024) {
+    return file
+  }
+
+  return new Promise((resolve) => {
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      const img = new Image()
+      img.onload = () => {
+        const maxDim = 1600
+        let width = img.width
+        let height = img.height
+
+        if (width > maxDim || height > maxDim) {
+          if (width > height) {
+            height = Math.round((height * maxDim) / width)
+            width = maxDim
+          } else {
+            width = Math.round((width * maxDim) / height)
+            height = maxDim
+          }
+        }
+
+        const canvas = document.createElement('canvas')
+        canvas.width = width
+        canvas.height = height
+        const ctx = canvas.getContext('2d')
+        if (!ctx) {
+          resolve(file)
+          return
+        }
+
+        ctx.drawImage(img, 0, 0, width, height)
+        canvas.toBlob(
+          (blob) => {
+            if (blob) {
+              const compressedFile = new File([blob], file.name.replace(/\.[^.]+$/, '.jpg'), {
+                type: 'image/jpeg',
+                lastModified: Date.now(),
+              })
+              resolve(compressedFile)
+            } else {
+              resolve(file)
+            }
+          },
+          'image/jpeg',
+          0.85
+        )
+      }
+      img.onerror = () => resolve(file)
+      img.src = e.target?.result as string
+    }
+    reader.onerror = () => resolve(file)
+    reader.readAsDataURL(file)
+  })
+}
 
 export default function CheckInPage() {
   const router = useRouter()
@@ -62,10 +121,21 @@ export default function CheckInPage() {
     setSubmitResult(null)
 
     try {
+      // 1. Optimize image (compress if larger than 1.5MB to avoid payload limits / timeouts)
+      const uploadFile = await compressImageIfNeeded(file)
+
       const formData = new FormData()
-      formData.append('photo', file)
-      formData.append('email', session?.user?.email || '')
-      formData.append('patientName', session?.user?.name || '')
+      formData.append('photo', uploadFile)
+
+      const userEmail =
+        (session?.user?.email ||
+        (typeof window !== 'undefined' ? localStorage.getItem('dermalens_user_email') : '') ||
+        'patient@demo.com').trim().toLowerCase()
+
+      const patientName = (session?.user?.name || 'Patient').trim()
+
+      formData.append('email', userEmail)
+      formData.append('patientName', patientName)
       formData.append('fever', String(fever))
       formData.append('increasingPain', String(increasingPain))
       formData.append('purulentDischarge', String(purulentDischarge))
@@ -74,21 +144,62 @@ export default function CheckInPage() {
         formData.append('clinicianNotes', notes.trim())
       }
 
-      // POST to Express backend / Next.js API -> forwards to ML FastAPI -> saves to MongoDB / SQLite
-      const res = await fetch(`${getApiBase()}/patients/checkins`, {
-        method: 'POST',
-        body: formData,
-      })
+      const authHeaders = getBackendAuthHeaders(session)
 
-      const data = await res.json()
-      if (!res.ok || !data.success) {
-        throw new Error(data.message || 'Failed to submit check-in.')
+      // First attempt: Primary API endpoint
+      let res: Response | null = null
+      let data: any = null
+      const primaryUrl = `${getApiBase()}/patients/checkins`
+
+      try {
+        res = await fetch(primaryUrl, {
+          method: 'POST',
+          headers: authHeaders,
+          body: formData,
+        })
+        if (res.ok) {
+          data = await res.json()
+        } else {
+          data = await res.json().catch(() => null)
+        }
+      } catch (primaryErr) {
+        console.warn('Primary checkin submission network error, trying fallback:', primaryErr)
       }
 
-      setSubmitResult(data.data)
+      // Second attempt: If primary failed or returned an error, fallback to same-origin /api/patients/checkins
+      if (!data || !data.success) {
+        if (primaryUrl !== '/api/patients/checkins') {
+          try {
+            const fallbackRes = await fetch('/api/patients/checkins', {
+              method: 'POST',
+              headers: authHeaders,
+              body: formData,
+            })
+            if (fallbackRes.ok) {
+              data = await fallbackRes.json()
+            } else {
+              const fallbackErrJson = await fallbackRes.json().catch(() => null)
+              if (fallbackErrJson) data = fallbackErrJson
+            }
+          } catch (fallbackErr) {
+            console.warn('Fallback checkin submission error:', fallbackErr)
+          }
+        }
+      }
+
+      if (!data || (!data.success && !data.checkIn)) {
+        const errorMsg =
+          data?.message ||
+          data?.error ||
+          (data?.errors && data.errors[0]?.msg) ||
+          (res && !res.ok ? `Server returned status ${res.status}: Failed to submit check-in.` : 'Failed to submit check-in.')
+        throw new Error(errorMsg)
+      }
+
+      setSubmitResult(data.data || data.checkIn || data)
     } catch (err: any) {
       console.error('Submission error:', err)
-      setErrorMessage(err.message || 'Network error connecting to Express backend.')
+      setErrorMessage(err.message || 'Network error submitting check-in.')
     } finally {
       setIsSubmitting(false)
     }
