@@ -12,6 +12,9 @@ const nextConfig = {
   // Bundle optimization
   experimental: {
     optimizePackageImports: ['lucide-react', '@radix-ui/react-icons'],
+    outputFileTracingIncludes: {
+      '/**': ['./prisma/**', './public/uploads/**'],
+    },
   },
   // Webpack optimizations
   webpack: (config, { isServer, dev }) => {

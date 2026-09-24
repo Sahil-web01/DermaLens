@@ -6,14 +6,12 @@
 export function getApiBase(): string {
   if (typeof window !== 'undefined') {
     const configured = process.env.NEXT_PUBLIC_API_URL
+    // If configured with an external production HTTPS URL (e.g. Render backend), use it
     if (configured && configured.startsWith('https://')) {
       return configured.replace(/\/$/, '')
     }
-    // If running in browser and URL is localhost, keep localhost if user is running locally
-    if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-      return (configured || 'http://localhost:5000/api').replace(/\/$/, '')
-    }
-    // In production web deployment (e.g. Vercel), route through same-origin /api
+    // Always route through same-origin /api in browser for zero CORS, zero mixed-content,
+    // and autonomous server-side fallback between Express and SQLite
     return '/api'
   }
   return (process.env.BACKEND_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api').replace(/\/$/, '')

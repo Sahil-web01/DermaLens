@@ -20,7 +20,9 @@ function resolveDatabaseUrl(): string {
       const fs = require('fs')
       const path = require('path')
 
-      if (!fs.existsSync(tmpDbPath)) {
+      const isDbReady = fs.existsSync(tmpDbPath) && fs.statSync(tmpDbPath).size > 1000
+
+      if (!isDbReady) {
         const proc = (globalThis as any).process
         const root = proc && typeof proc['c' + 'wd'] === 'function' ? proc['c' + 'wd']() : ''
 
@@ -32,18 +34,32 @@ function resolveDatabaseUrl(): string {
           path.join(__dirname, 'dev.db'),
         ]
 
-
         let copied = false
         for (const candidate of candidates) {
-          if (fs.existsSync(candidate)) {
+          if (fs.existsSync(candidate) && fs.statSync(candidate).size > 1000) {
             try {
               fs.copyFileSync(candidate, tmpDbPath)
               copied = true
-              console.log(`[Prisma] Seeded /tmp/dev.db from ${candidate}`)
+              console.log(`[Prisma] Seeded /tmp/dev.db from disk at ${candidate}`)
               break
             } catch (e) {
               console.warn(`[Prisma] Failed to copy database from ${candidate}:`, e)
             }
+          }
+        }
+
+        // Guaranteed fallback: restore complete database from embedded snapshot
+        if (!copied) {
+          try {
+            const { DEV_DB_BASE64 } = require('./devDbSeed')
+            if (DEV_DB_BASE64) {
+              const buffer = Buffer.from(DEV_DB_BASE64, 'base64')
+              fs.writeFileSync(tmpDbPath, buffer)
+              copied = true
+              console.log(`[Prisma] Successfully restored /tmp/dev.db from embedded snapshot (${buffer.length} bytes)`)
+            }
+          } catch (embedErr) {
+            console.warn('[Prisma] Embedded snapshot restore failed:', embedErr)
           }
         }
 
