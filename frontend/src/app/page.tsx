@@ -31,7 +31,7 @@ export default async function HomePage() {
                 <Link href="/login" className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
                   Sign in
                 </Link>
-                <Link href="/login" className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors">
+                <Link href="/login?mode=signup" className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors">
                   Get Started
                 </Link>
               </nav>
@@ -51,7 +51,10 @@ export default async function HomePage() {
             </p>
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
               <Link href="/login" className="w-full sm:w-auto rounded-md bg-primary px-6 py-3 text-base font-medium text-primary-foreground hover:bg-primary/90 transition-colors focus-ring">
-                Access Dashboard
+                Sign In
+              </Link>
+              <Link href="/login?mode=signup" className="w-full sm:w-auto rounded-md border border-border bg-card px-6 py-3 text-base font-medium text-foreground hover:bg-muted transition-colors focus-ring">
+                Create Account
               </Link>
             </div>
           </div>

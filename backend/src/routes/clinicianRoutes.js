@@ -1,9 +1,15 @@
 import express from 'express';
 import { getReviewQueue, getClinicianStats } from '../controllers/clinicianController.js';
 import { reviewCheckIn, getCheckInById } from '../controllers/checkinController.js';
-import { getPatients } from '../controllers/patientController.js';
+import { getPatients, getCliniciansDirectory } from '../controllers/patientController.js';
+import { optionalProtect } from '../middlewares/authMiddleware.js';
 
 const router = express.Router();
+
+router.use(optionalProtect);
+
+// Clinician directory (for patient physician choice)
+router.get('/directory', getCliniciansDirectory);
 
 // Clinician review queue (both /queue and /review-queue for frontend compatibility)
 router.get('/queue', getReviewQueue);

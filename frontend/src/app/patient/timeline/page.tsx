@@ -3,14 +3,17 @@
 import { useEffect, useState, Suspense } from 'react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
+import { useSession } from 'next-auth/react'
 import { DashboardLayout } from '@/components/layout/dashboard-layout'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { ArrowLeft, Calendar, Camera, AlertCircle, CheckCircle2, ShieldAlert, Printer, FileText } from 'lucide-react'
 import { ClinicalReportModal } from '@/components/clinical/clinical-report-modal'
+import { getBackendAuthHeaders } from '@/lib/backendSession'
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api'
+const BACKEND_BASE = API_BASE.replace(/\/api$/, '')
 
 interface CheckInRecord {
   _id: string
@@ -32,30 +35,47 @@ interface CheckInRecord {
 }
 
 function TimelineContent() {
+  const { data: session } = useSession()
   const searchParams = useSearchParams()
   const patientId = searchParams?.get('patientId')
 
   const [patient, setPatient] = useState<any>(null)
   const [timeline, setTimeline] = useState<CheckInRecord[]>([])
   const [loading, setLoading] = useState(true)
+  const [accessDeniedMessage, setAccessDeniedMessage] = useState<string | null>(null)
   const [selectedIndex, setSelectedIndex] = useState<number>(0)
   const [isReportOpen, setIsReportOpen] = useState(false)
+
+  const isClinician = session?.user?.role === 'CLINICIAN'
+  const patientDisplayName = patient?.name || (isClinician ? 'Patient' : session?.user?.name || 'Patient')
+  const userHeaderName = session?.user?.name || (isClinician ? 'Dr. Sarah Chen, MD' : patientDisplayName)
+  const userRole = (session?.user?.role || 'PATIENT') as 'PATIENT' | 'CLINICIAN'
 
   useEffect(() => {
     async function fetchTimeline() {
       try {
+        const email = session?.user?.email
+        const name = session?.user?.name
+        const query = email ? `email=${encodeURIComponent(email)}&name=${encodeURIComponent(name || '')}` : ''
+
         const url = patientId
           ? `${API_BASE}/patients/${patientId}/timeline`
-          : `${API_BASE}/patients/timeline`
+          : `${API_BASE}/patients/timeline${query ? `?${query}` : ''}`
 
-        const res = await fetch(url)
+        const headers = isClinician
+          ? getBackendAuthHeaders(session)
+          : undefined
+        const res = await fetch(url, headers ? { headers } : undefined)
         if (res.ok) {
           const data = await res.json()
           if (data.patient) setPatient(data.patient)
           if (data.timeline) {
             setTimeline(data.timeline)
-            setSelectedIndex(data.timeline.length - 1)
+            setSelectedIndex(data.timeline.length > 0 ? data.timeline.length - 1 : 0)
           }
+        } else if (res.status === 403) {
+          const errData = await res.json().catch(() => null)
+          setAccessDeniedMessage(errData?.message || 'Access Denied: You are not the assigned clinician for this patient.')
         }
       } catch (err) {
         console.error('Failed to load timeline:', err)
@@ -63,26 +83,28 @@ function TimelineContent() {
         setLoading(false)
       }
     }
-    fetchTimeline()
-  }, [patientId])
+    if (session !== undefined) {
+      fetchTimeline()
+    }
+  }, [patientId, session])
 
-  const currentItem = timeline[selectedIndex]
+  const currentItem = timeline.length > 0 ? timeline[selectedIndex] : null
 
   return (
-    <DashboardLayout userRole="PATIENT">
+    <DashboardLayout userRole={userRole} userName={userHeaderName}>
       <div className="max-w-6xl mx-auto space-y-6">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex items-center gap-3">
-            <Link href="/patient">
+            <Link href={isClinician ? '/clinician/patients' : '/patient'}>
               <Button variant="ghost" size="sm">
-                <ArrowLeft className="h-4 w-4 mr-1" /> Dashboard
+                <ArrowLeft className="h-4 w-4 mr-1" /> {isClinician ? 'Patient Cohort' : 'Dashboard'}
               </Button>
             </Link>
             <div>
               <h1 className="text-2xl font-bold text-foreground">Recovery Timeline Scrubber</h1>
               <p className="text-sm text-muted-foreground">
-                Patient: <strong>{patient?.name || 'David Rodriguez'}</strong> &bull; Procedure:{' '}
-                {patient?.surgeryType || 'Open Appendectomy'}
+                Patient: <strong>{patientDisplayName}</strong> (MRN: {patient?.mrn || 'Assigned'}) &bull; Procedure:{' '}
+                {patient?.surgeryType || 'General Post-Op Surveillance'}
               </p>
             </div>
           </div>
@@ -95,11 +117,13 @@ function TimelineContent() {
             >
               <Printer className="h-4 w-4" /> Export Report (PDF)
             </Button>
-            <Link href="/patient/check-in">
-              <Button className="gap-2" size="sm">
-                <Camera className="h-4 w-4" /> New Check-In
-              </Button>
-            </Link>
+            {!isClinician && (
+              <Link href="/patient/check-in">
+                <Button className="gap-2" size="sm">
+                  <Camera className="h-4 w-4" /> New Check-In
+                </Button>
+              </Link>
+            )}
           </div>
         </div>
 
@@ -113,17 +137,56 @@ function TimelineContent() {
 
         {loading ? (
           <div className="py-20 text-center text-muted-foreground">Loading timeline...</div>
-        ) : timeline.length === 0 ? (
-          <Card>
-            <CardContent className="py-16 text-center">
-              <AlertCircle className="mx-auto h-12 w-12 text-muted-foreground mb-3 opacity-40" />
-              <h3 className="text-lg font-semibold text-foreground">No Timeline Records Found</h3>
-              <p className="text-sm text-muted-foreground max-w-sm mx-auto mt-1 mb-6">
-                You haven&apos;t recorded any wound check-ins yet. Take your first photo to begin tracking your recovery.
+        ) : accessDeniedMessage ? (
+          <Card className="border-rose-200 bg-rose-50/40 dark:bg-rose-950/20 max-w-lg mx-auto">
+            <CardContent className="py-16 text-center space-y-4">
+              <div className="h-16 w-16 rounded-full bg-rose-100 text-rose-600 dark:bg-rose-900/40 dark:text-rose-400 flex items-center justify-center mx-auto">
+                <ShieldAlert className="h-8 w-8" />
+              </div>
+              <h3 className="text-xl font-bold text-foreground">Clinical Access Restricted</h3>
+              <p className="text-sm text-muted-foreground max-w-sm mx-auto">
+                {accessDeniedMessage} Under physician-patient isolation rules, patient wound photos, symptoms, and check-in timelines are strictly restricted to the assigned attending clinician.
               </p>
-              <Link href="/patient/check-in">
-                <Button>Start First Check-In</Button>
-              </Link>
+              <div className="pt-2">
+                <Link href={isClinician ? '/clinician/patients' : '/patient'}>
+                  <Button className="gap-2">
+                    <ArrowLeft className="h-4 w-4" /> Return to My Patient Cohort
+                  </Button>
+                </Link>
+              </div>
+            </CardContent>
+          </Card>
+        ) : timeline.length === 0 ? (
+          <Card className="border-dashed">
+            <CardContent className="py-16 text-center max-w-lg mx-auto">
+              <div className="h-16 w-16 rounded-full bg-primary/10 text-primary flex items-center justify-center mx-auto mb-4">
+                <Camera className="h-8 w-8" />
+              </div>
+              <h3 className="text-xl font-bold text-foreground">Awaiting Initial Check-In</h3>
+              <p className="text-sm text-muted-foreground mt-2 mb-6">
+                {isClinician
+                  ? `Patient ${patientDisplayName} (${patient?.mrn || 'Assigned'}) is enrolled in remote surgical surveillance. No post-operative wound photos have been recorded yet.`
+                  : "You haven't recorded any wound check-ins yet. Take your baseline Day 0/Day 1 photo to begin tracking your recovery trajectory."}
+              </p>
+              {isClinician ? (
+                <div className="flex justify-center gap-3">
+                  <Link href="/clinician/patients">
+                    <Button variant="outline">Back to Cohort</Button>
+                  </Link>
+                  <Button
+                    onClick={() => alert(`Check-in reminder prompt queued for ${patientDisplayName}.`)}
+                    className="gap-2"
+                  >
+                    <CheckCircle2 className="h-4 w-4" /> Request Check-In
+                  </Button>
+                </div>
+              ) : (
+                <Link href="/patient/check-in">
+                  <Button className="gap-2">
+                    <Camera className="h-4 w-4" /> Start First Check-In
+                  </Button>
+                </Link>
+              )}
             </CardContent>
           </Card>
         ) : (
@@ -187,13 +250,13 @@ function TimelineContent() {
                       </span>
                     </CardTitle>
                   </CardHeader>
-                  <CardContent className="flex items-center justify-center p-6 bg-muted/30 min-h-[340px]">
+                  <CardContent className="flex items-center justify-center p-6 bg-muted/20 min-h-[380px]">
                     {currentItem.photoUrl ? (
                       /* eslint-disable-next-line @next/next/no-img-element */
                       <img
-                        src={`http://localhost:5000${currentItem.photoUrl}`}
+                        src={currentItem.photoUrl.startsWith('http') ? currentItem.photoUrl : `${BACKEND_BASE}${currentItem.photoUrl}`}
                         alt="Wound Capture"
-                        className="max-h-[380px] w-auto rounded-lg object-contain shadow-card border border-border"
+                        className="w-full max-w-[420px] aspect-square rounded-xl object-contain shadow-md border border-border bg-slate-900/5 dark:bg-slate-900/40"
                         onError={(e) => {
                           const target = e.target as HTMLImageElement
                           target.src = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 24 24" fill="none" stroke="%23999" stroke-width="2"><rect width="18" height="18" x="3" y="3" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>'

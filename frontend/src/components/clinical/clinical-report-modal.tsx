@@ -4,6 +4,8 @@ import { useState, useEffect } from 'react'
 import { Printer, Download, X, ShieldAlert, CheckCircle2, AlertTriangle, FileText } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { useSession } from 'next-auth/react'
+import { getBackendAuthHeaders } from '@/lib/backendSession'
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api'
 const BACKEND_BASE = API_BASE.replace(/\/api$/, '')
@@ -15,6 +17,7 @@ interface ClinicalReportModalProps {
 }
 
 export function ClinicalReportModal({ patientId, isOpen, onClose }: ClinicalReportModalProps) {
+  const { data: session } = useSession()
   const [patient, setPatient] = useState<any>(null)
   const [timeline, setTimeline] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
@@ -30,7 +33,7 @@ export function ClinicalReportModal({ patientId, isOpen, onClose }: ClinicalRepo
             ? `${API_BASE}/patients/${patientId}/timeline`
             : `${API_BASE}/patients/timeline`
 
-        const res = await fetch(url)
+        const res = await fetch(url, { headers: getBackendAuthHeaders(session) })
         if (res.ok) {
           const data = await res.json()
           setPatient(data.patient)
@@ -43,7 +46,7 @@ export function ClinicalReportModal({ patientId, isOpen, onClose }: ClinicalRepo
       }
     }
     loadReportData()
-  }, [isOpen, patientId])
+  }, [isOpen, patientId, session?.user?.email])
 
   if (!isOpen) return null
 

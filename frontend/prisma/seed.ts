@@ -39,8 +39,8 @@ async function main() {
     });
   }
 
-  // 2. Clinician Demo User
-  await prisma.user.upsert({
+  // 2. Clinician Demo Users
+  const clinicianSarah = await prisma.user.upsert({
     where: { email: 'clinician@demo.com' },
     update: {
       password: hashedPassword,
@@ -55,9 +55,31 @@ async function main() {
     },
   });
 
+  const clinicianJames = await prisma.user.upsert({
+    where: { email: 'clinician2@demo.com' },
+    update: {
+      password: hashedPassword,
+      name: 'Dr. James Wong, MD',
+      role: 'CLINICIAN',
+    },
+    create: {
+      email: 'clinician2@demo.com',
+      name: 'Dr. James Wong, MD',
+      password: hashedPassword,
+      role: 'CLINICIAN',
+    },
+  });
+
+  // Assign demo patient David Rodriguez to Dr. Sarah Chen only
+  await prisma.user.update({
+    where: { id: patient.id },
+    data: { assignedClinicianId: clinicianSarah.id },
+  });
+
   console.log('Seeding complete! Demo users:');
-  console.log('  Patient:   patient@demo.com   / demo123');
-  console.log('  Clinician: clinician@demo.com / demo123');
+  console.log('  Patient:    patient@demo.com    / demo123  → Dr. Sarah Chen');
+  console.log('  Clinician:  clinician@demo.com  / demo123  → Sarah Jenkins + David Rodriguez');
+  console.log('  Clinician:  clinician2@demo.com / demo123  → Elena Rostova (Mongo seed)');
 }
 
 main()

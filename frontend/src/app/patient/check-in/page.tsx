@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import { useSession } from 'next-auth/react'
 import { DashboardLayout } from '@/components/layout/dashboard-layout'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -25,6 +26,7 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api'
 
 export default function CheckInPage() {
   const router = useRouter()
+  const { data: session } = useSession()
   const [file, setFile] = useState<File | null>(null)
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
 
@@ -63,6 +65,8 @@ export default function CheckInPage() {
     try {
       const formData = new FormData()
       formData.append('photo', file)
+      formData.append('email', session?.user?.email || '')
+      formData.append('patientName', session?.user?.name || '')
       formData.append('fever', String(fever))
       formData.append('increasingPain', String(increasingPain))
       formData.append('purulentDischarge', String(purulentDischarge))
@@ -92,7 +96,7 @@ export default function CheckInPage() {
   }
 
   return (
-    <DashboardLayout userRole="PATIENT">
+    <DashboardLayout userRole="PATIENT" userName={session?.user?.name || 'Patient'}>
       <div className="max-w-4xl mx-auto space-y-6">
         <div className="flex items-center gap-4">
           <Link href="/patient">

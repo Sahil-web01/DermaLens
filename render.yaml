@@ -1,0 +1,37 @@
+services:
+  # 1. FastAPI Machine Learning Inference Service
+  - type: web
+    name: dermalens-ml
+    env: python
+    region: oregon
+    plan: free
+    rootDir: ml
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    autoDeploy: true
+
+  # 2. Node.js / Express API Backend
+  - type: web
+    name: dermalens-backend
+    env: node
+    region: oregon
+    plan: free
+    rootDir: backend
+    buildCommand: npm install
+    startCommand: node server.js
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: MONGO_URI
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: ML_SERVICE_URL
+        sync: false
+      - key: CORS_ORIGIN
+        value: "*"

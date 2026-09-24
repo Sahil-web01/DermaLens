@@ -1,4 +1,5 @@
 import CheckIn from '../models/CheckIn.js';
+import { resolveActingClinician, getAssignedPatientIds } from '../utils/clinicianPatientAccess.js';
 
 // Calculate if a check-in is high risk and return human-readable reasons
 const assessCheckInRisk = (checkIn) => {
@@ -29,12 +30,32 @@ const assessCheckInRisk = (checkIn) => {
  */
 export const getReviewQueue = async (req, res) => {
   try {
+    const clinician = await resolveActingClinician(req);
+    if (!clinician) {
+      return res.status(401).json({
+        success: false,
+        message: 'Clinician authentication required.',
+      });
+    }
+
+    const assignedPatientIds = await getAssignedPatientIds(clinician);
+    if (assignedPatientIds.length === 0) {
+      return res.status(200).json({
+        success: true,
+        count: 0,
+        data: [],
+      });
+    }
+
     const { status } = req.query;
 
     // Filter by requested status, or default to all actionable unreviewed check-ins
     const statusFilter = status
-      ? { reviewStatus: status }
-      : { reviewStatus: { $in: ['pending', 'manual_review_required', 'escalated', 'retake_requested'] } };
+      ? { reviewStatus: status, patientId: { $in: assignedPatientIds } }
+      : {
+          reviewStatus: { $in: ['pending', 'manual_review_required', 'escalated', 'retake_requested'] },
+          patientId: { $in: assignedPatientIds },
+        };
 
     // Fetch check-ins and populate patient information
     const checkIns = await CheckIn.find(statusFilter)
@@ -86,15 +107,27 @@ export const getReviewQueue = async (req, res) => {
  */
 export const getClinicianStats = async (req, res) => {
   try {
-    const total = await CheckIn.countDocuments();
-    const pending = await CheckIn.countDocuments({ reviewStatus: 'pending' });
-    const reviewed = await CheckIn.countDocuments({ reviewStatus: 'reviewed' });
-    const escalated = await CheckIn.countDocuments({ reviewStatus: 'escalated' });
-    const manualReview = await CheckIn.countDocuments({ reviewStatus: 'manual_review_required' });
-    const retakeRequested = await CheckIn.countDocuments({ reviewStatus: 'retake_requested' });
+    const clinician = await resolveActingClinician(req);
+    if (!clinician) {
+      return res.status(401).json({
+        success: false,
+        message: 'Clinician authentication required.',
+      });
+    }
+
+    const assignedPatientIds = await getAssignedPatientIds(clinician);
+    const scope = assignedPatientIds.length > 0 ? { patientId: { $in: assignedPatientIds } } : { patientId: null };
+
+    const total = await CheckIn.countDocuments(scope);
+    const pending = await CheckIn.countDocuments({ ...scope, reviewStatus: 'pending' });
+    const reviewed = await CheckIn.countDocuments({ ...scope, reviewStatus: 'reviewed' });
+    const escalated = await CheckIn.countDocuments({ ...scope, reviewStatus: 'escalated' });
+    const manualReview = await CheckIn.countDocuments({ ...scope, reviewStatus: 'manual_review_required' });
+    const retakeRequested = await CheckIn.countDocuments({ ...scope, reviewStatus: 'retake_requested' });
 
     // Count flagged: either escalated, manual review, or high AI concern
     const flagged = await CheckIn.countDocuments({
+      ...scope,
       $or: [
         { reviewStatus: 'escalated' },
         { 'symptoms.fever': true },

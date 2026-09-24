@@ -4,16 +4,15 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "prisma generate && next build",
+    "postinstall": "prisma generate",
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
     "db:generate": "prisma generate",
     "db:push": "prisma db push",
     "db:seed": "tsx prisma/seed.ts",
-    "db:studio": "prisma studio",
-    "validate:prod": "node scripts/validate-production.js",
-    "prebuild": "npm run validate:prod || true"
+    "db:studio": "prisma studio"
   },
   "dependencies": {
     "@prisma/client": "^5.17.0",

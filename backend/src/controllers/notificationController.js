@@ -1,4 +1,5 @@
 import Notification from '../models/Notification.js';
+import { resolveActingClinician, getAssignedPatientIds } from '../utils/clinicianPatientAccess.js';
 
 /**
  * GET /api/notifications
@@ -6,8 +7,16 @@ import Notification from '../models/Notification.js';
  */
 export const getNotifications = async (req, res) => {
   try {
-    const role = req.query.role || req.user?.role || 'CLINICIAN';
-    const filter = { recipientRole: role.toUpperCase() };
+    const role = (req.query.role || req.user?.role || 'CLINICIAN').toUpperCase();
+    const filter = { recipientRole: role };
+
+    if (role === 'CLINICIAN') {
+      const clinician = await resolveActingClinician(req);
+      if (clinician) {
+        const patientIds = await getAssignedPatientIds(clinician);
+        filter.patientId = { $in: patientIds };
+      }
+    }
 
     const notifications = await Notification.find(filter)
       .sort({ createdAt: -1 })
@@ -31,11 +40,21 @@ export const getNotifications = async (req, res) => {
  */
 export const getUnreadCount = async (req, res) => {
   try {
-    const role = req.query.role || req.user?.role || 'CLINICIAN';
-    const count = await Notification.countDocuments({
-      recipientRole: role.toUpperCase(),
+    const role = (req.query.role || req.user?.role || 'CLINICIAN').toUpperCase();
+    const filter = {
+      recipientRole: role,
       read: false,
-    });
+    };
+
+    if (role === 'CLINICIAN') {
+      const clinician = await resolveActingClinician(req);
+      if (clinician) {
+        const patientIds = await getAssignedPatientIds(clinician);
+        filter.patientId = { $in: patientIds };
+      }
+    }
+
+    const count = await Notification.countDocuments(filter);
 
     return res.status(200).json({
       success: true,

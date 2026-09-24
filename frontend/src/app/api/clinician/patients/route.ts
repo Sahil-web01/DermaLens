@@ -10,7 +10,10 @@ export async function GET() {
     }
 
     const patients = await prisma.user.findMany({
-      where: { role: 'PATIENT' },
+      where: {
+        role: 'PATIENT',
+        assignedClinicianId: session.user.id,
+      },
       include: {
         patientEpisodes: {
           include: {

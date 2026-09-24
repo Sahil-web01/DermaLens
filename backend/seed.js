@@ -5,9 +5,11 @@ import path from 'path';
 
 dotenv.config();
 
+import bcrypt from 'bcryptjs';
 import Patient from './src/models/Patient.js';
 import CheckIn from './src/models/CheckIn.js';
 import Notification from './src/models/Notification.js';
+import User from './src/models/User.js';
 
 // Connect to MongoDB
 const mongoUri = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/dermalens';
@@ -46,9 +48,26 @@ const ensureDemoImages = (uploadDir) => {
 
 const seedDatabase = async () => {
   try {
-    console.log('[Seeder] Connecting to MongoDB:', mongoUri);
-    await mongoose.connect(mongoUri);
-    console.log('[Seeder] Connected successfully!');
+    const primaryUri = process.env.MONGO_URI;
+    const fallbackUri = 'mongodb://127.0.0.1:27017/dermalens';
+    let connected = false;
+
+    if (primaryUri && primaryUri !== fallbackUri) {
+      try {
+        console.log('[Seeder] Attempting primary MongoDB URI...');
+        await mongoose.connect(primaryUri, { serverSelectionTimeoutMS: 4000 });
+        console.log('[Seeder] Connected to MongoDB Atlas successfully!');
+        connected = true;
+      } catch (e) {
+        console.warn(`[Seeder Warning] Primary MongoDB failed (${e.message}). Switching to local fallback...`);
+      }
+    }
+
+    if (!connected) {
+      console.log('[Seeder] Connecting to local MongoDB on mongodb://127.0.0.1:27017/dermalens...');
+      await mongoose.connect(fallbackUri, { serverSelectionTimeoutMS: 4000 });
+      console.log('[Seeder] Connected to local MongoDB successfully!');
+    }
 
     // Ensure uploads folder and demo images exist
     const uploadDir = path.resolve(process.env.UPLOAD_DIR || 'uploads');
@@ -64,6 +83,30 @@ const seedDatabase = async () => {
     await CheckIn.deleteMany({ patientId: { $in: existingPatientIds } });
     await Patient.deleteMany({ mrn: { $in: demoMRNs } });
 
+    // Demo clinician accounts (each sees only assigned patients)
+    console.log('[Seeder] Creating demo clinician users...');
+    const demoPasswordHash = await bcrypt.hash('demo123', 10);
+    const clinicianSarah = await User.findOneAndUpdate(
+      { email: 'clinician@demo.com' },
+      {
+        name: 'Dr. Sarah Chen, MD',
+        email: 'clinician@demo.com',
+        password: demoPasswordHash,
+        role: 'CLINICIAN',
+      },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    );
+    const clinicianJames = await User.findOneAndUpdate(
+      { email: 'clinician2@demo.com' },
+      {
+        name: 'Dr. James Wong, MD',
+        email: 'clinician2@demo.com',
+        password: demoPasswordHash,
+        role: 'CLINICIAN',
+      },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    );
+
     const now = new Date();
     const daysAgo = (days) => new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
 
@@ -77,6 +120,8 @@ const seedDatabase = async () => {
       mrn: 'MRN-2026-001',
       surgeryType: 'Total Knee Arthroplasty',
       surgeryDate: daysAgo(8),
+      assignedClinicianId: clinicianSarah._id,
+      assignmentStatus: 'assigned',
     });
 
     await CheckIn.create([
@@ -144,9 +189,12 @@ const seedDatabase = async () => {
     console.log('[Seeder] Creating Scenario 2: High-Risk Infection Escalation...');
     const patient2 = await Patient.create({
       name: 'David Rodriguez',
+      email: 'patient@demo.com',
       mrn: 'MRN-2026-002',
       surgeryType: 'Open Appendectomy',
       surgeryDate: daysAgo(7),
+      assignedClinicianId: clinicianSarah._id,
+      assignmentStatus: 'assigned',
     });
 
     await CheckIn.create([
@@ -217,6 +265,8 @@ const seedDatabase = async () => {
       mrn: 'MRN-2026-003',
       surgeryType: 'Cesarean Delivery',
       surgeryDate: daysAgo(5),
+      assignedClinicianId: clinicianJames._id,
+      assignmentStatus: 'assigned',
     });
 
     await CheckIn.create([
@@ -310,7 +360,8 @@ const seedDatabase = async () => {
 
     console.log('\n======================================================');
     console.log('✅ DATABASE SEEDING COMPLETED SUCCESSFULLY!');
-    console.log('   - 3 Patients Created');
+    console.log('   - 2 Clinicians: clinician@demo.com (Sarah+David), clinician2@demo.com (Elena)');
+    console.log('   - 3 Patients Created with clinician assignments');
     console.log('   - 9 Check-In Records Seeded');
     console.log('   - 3 Demo Notifications Seeded (Unread Badging active)');
     console.log('   - Demo placeholder photos generated in uploads/');

@@ -43,7 +43,30 @@ export const authorize = (...roles) => {
   };
 };
 
+/** Attach req.user when a valid Bearer token is present; continue without error if missing. */
+export const optionalProtect = async (req, res, next) => {
+  let token;
+
+  if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
+    token = req.headers.authorization.split(' ')[1];
+  }
+
+  if (!token) {
+    return next();
+  }
+
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    req.user = await User.findById(decoded.id).select('-password');
+  } catch {
+    // Ignore invalid tokens; route handlers may use X-Clinician-Email instead.
+  }
+
+  return next();
+};
+
 export default {
   protect,
   authorize,
+  optionalProtect,
 };

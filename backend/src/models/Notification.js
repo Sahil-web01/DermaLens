@@ -23,7 +23,7 @@ const notificationSchema = new mongoose.Schema(
     },
     type: {
       type: String,
-      enum: ['HIGH_RISK_CHECKIN', 'CLINICAL_REVIEW', 'RETAKE_REQUESTED', 'INFO'],
+      enum: ['HIGH_RISK_CHECKIN', 'CLINICAL_REVIEW', 'RETAKE_REQUESTED', 'INFO', 'CONSENT_REQUEST', 'ASSIGNMENT_UPDATE'],
       default: 'INFO',
     },
     read: {

@@ -5,8 +5,11 @@ import {
   markAsRead,
   markAllAsRead,
 } from '../controllers/notificationController.js';
+import { optionalProtect } from '../middlewares/authMiddleware.js';
 
 const router = express.Router();
+
+router.use(optionalProtect);
 
 router.get('/', getNotifications);
 router.get('/unread-count', getUnreadCount);

@@ -6,10 +6,11 @@ export default auth((req) => {
   const isLoggedIn = !!req.auth
   const userRole = req.auth?.user?.role
 
-  // Allow static files, auth endpoints, and public landing/login pages
+  // Allow static files, auth endpoints, and public landing/login/signup pages
   const isPublicRoute =
     pathname === '/' ||
     pathname.startsWith('/login') ||
+    pathname.startsWith('/signup') ||
     pathname.startsWith('/api/auth')
 
   // 1. Unauthenticated request protection
@@ -28,8 +29,8 @@ export default auth((req) => {
     return NextResponse.redirect(loginUrl)
   }
 
-  // 2. If logged in and visiting /login or root, redirect to proper role portal
-  if (isLoggedIn && (pathname === '/login' || pathname === '/')) {
+  // 2. If logged in and visiting /login, /signup or root, redirect to proper role portal
+  if (isLoggedIn && (pathname === '/login' || pathname === '/signup' || pathname === '/')) {
     if (userRole === 'PATIENT') {
       return NextResponse.redirect(new URL('/patient', req.nextUrl.origin))
     } else if (userRole === 'CLINICIAN') {
@@ -50,9 +51,10 @@ export default auth((req) => {
     }
   }
 
-  // 4. Role-based isolation: Clinicians cannot access patient check-in directly
+  // 4. Role-based isolation: Clinicians cannot access personal patient check-in directly,
+  // but CAN access the patient recovery timeline scrubber (/patient/timeline)
   if (isLoggedIn && userRole !== 'PATIENT') {
-    if (pathname.startsWith('/patient')) {
+    if (pathname === '/patient' || pathname.startsWith('/patient/check-in')) {
       return NextResponse.redirect(new URL('/clinician', req.nextUrl.origin))
     }
     if (pathname.startsWith('/api/patient')) {

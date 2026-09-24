@@ -1,7 +1,10 @@
 import express from 'express';
 import { reviewCheckIn, getCheckInById } from '../controllers/checkinController.js';
+import { optionalProtect } from '../middlewares/authMiddleware.js';
 
 const router = express.Router();
+
+router.use(optionalProtect);
 
 // PATCH /api/checkins/:id/review - Update reviewStatus and append notes
 router.patch('/:id/review', reviewCheckIn);

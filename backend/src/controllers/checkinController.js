@@ -1,5 +1,6 @@
 import CheckIn from '../models/CheckIn.js';
 import Notification from '../models/Notification.js';
+import { resolveActingClinician, loadPatientIfAccessible, accessDenied } from '../utils/clinicianPatientAccess.js';
 
 const ALLOWED_STATUSES = [
   'pending',
@@ -18,12 +19,24 @@ export const reviewCheckIn = async (req, res) => {
     const { id } = req.params;
     const { reviewStatus, clinicianNotes, followUpAdvice } = req.body;
 
-    const checkIn = await CheckIn.findById(id).populate('patientId', 'name mrn surgeryType');
+    const checkIn = await CheckIn.findById(id).populate('patientId', 'name mrn surgeryType assignedClinicianId');
     if (!checkIn) {
       return res.status(404).json({
         success: false,
         message: 'Check-in not found',
       });
+    }
+
+    const clinician = await resolveActingClinician(req);
+    if (!clinician) {
+      return res.status(401).json({
+        success: false,
+        message: 'Clinician authentication required.',
+      });
+    }
+    const allowed = await loadPatientIfAccessible(checkIn.patientId, clinician);
+    if (!allowed) {
+      return accessDenied(res);
     }
 
     // Validate reviewStatus if provided
@@ -85,13 +98,28 @@ export const reviewCheckIn = async (req, res) => {
 export const getCheckInById = async (req, res) => {
   try {
     const { id } = req.params;
-    const checkIn = await CheckIn.findById(id).populate('patientId', 'name mrn surgeryType surgeryDate');
+    const checkIn = await CheckIn.findById(id).populate(
+      'patientId',
+      'name mrn surgeryType surgeryDate assignedClinicianId'
+    );
 
     if (!checkIn) {
       return res.status(404).json({
         success: false,
         message: 'Check-in not found',
       });
+    }
+
+    const clinician = await resolveActingClinician(req);
+    if (!clinician) {
+      return res.status(401).json({
+        success: false,
+        message: 'Clinician authentication required.',
+      });
+    }
+    const allowed = await loadPatientIfAccessible(checkIn.patientId, clinician);
+    if (!allowed) {
+      return accessDenied(res);
     }
 
     return res.status(200).json({

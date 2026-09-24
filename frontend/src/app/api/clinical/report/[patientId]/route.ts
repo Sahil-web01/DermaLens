@@ -30,6 +30,10 @@ export async function GET(
       return NextResponse.json({ error: 'Patient not found' }, { status: 404 })
     }
 
+    if (patient.assignedClinicianId !== session.user.id) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
+
     const episodes = patient.patientEpisodes
     const checkIns = episodes.flatMap((e) => e.checkIns)
 

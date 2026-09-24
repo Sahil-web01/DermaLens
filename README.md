@@ -80,34 +80,49 @@ Surgical site infections (SSIs) are among the most common healthcare-associated 
   - `Print / Save PDF`: Scoped print media CSS suppresses browser chrome for a clean paper/PDF report.
   - `Export JSON`: Structured trajectory data export for electronic health record (EHR) integration.
 
-### 🛡️ 7. Role-Based Access Control (RBAC) & Route Protection
+### 🛡️ 7. Physician-Patient Cohort Isolation & Patient-Doctor Mutual Consent
+- **Strict Clinical Confidentiality:** Each attending surgeon or nurse only has access to their assigned patients. Doctors cannot access or inspect symptoms or wound photography of patients under another physician's care.
+- **Patient Autonomy & Right to Choose:** Patients have the clear right to choose their preferred attending surgeon from the verified hospital directory or change their doctor at any time.
+- **Two-Way Mutual Consent Model:**
+  - **Doctor-Initiated Care Offer:** When an attending surgeon offers care to an unassigned patient (`POST /api/patients/:id/claim`), the patient is **never trapped or forced**. The patient receives an offer card with the right to **[Accept & Consent]** or **[Decline & Choose Another Doctor]**.
+  - **Patient-Initiated Choice Request:** A patient can select any surgeon (e.g. Dr. Sarah Chen or Dr. James Wong) via `POST /api/patients/:id/request-doctor`. The chosen surgeon receives an intake request and must grant clinical consent (`POST /api/patients/:id/doctor-consent`) before the patient is assigned.
+  - **Patient Right to Change Doctor:** Patients can release or transfer their doctor assignment at any time from their recovery dashboard.
+- **Unauthorized Guarding:** Direct URL attempts by unauthorized clinicians return `403 Forbidden` and render a dedicated **Clinical Access Restricted** safety screen.
+
+### 🔒 8. Role-Based Access Control (RBAC) & Edge Route Protection
 - **Edge Middleware Protection ([middleware.ts](frontend/src/middleware.ts)):** Prevents unauthorized route navigation.
-- **Role Isolation:** Patients cannot view clinician review queues; clinicians are directed to surgical triage dashboards.
+- **Role Isolation:** Patients cannot view clinician review queues; clinicians are directed to surgical triage dashboards while maintaining access to patient trajectory scrubbers.
 - **Encrypted Authentication:** Bcrypt password hashing, session tokens, and sanitized user data.
 
 ---
 
 ## 🔑 03. Live Demo Credentials & Scenarios
 
-The codebase includes an automated seeder (`npm run seed` in `backend/`) that populates MongoDB Atlas with three realistic post-op recovery scenarios.
+The codebase includes an automated seeder (`npm run seed` in `backend/`) that populates MongoDB Atlas with realistic post-op recovery scenarios and isolated doctor cohorts.
 
 ### Demo User Accounts:
-| Role | Email | Password | Primary Destination |
-| :--- | :--- | :--- | :--- |
-| **Clinician (Attending)** | `clinician@demo.com` | `demo123` | `/clinician` (Triage Queue) |
-| **Patient (Enrolled)** | `patient@demo.com` | `demo123` | `/patient` (Patient Portal) |
+| Role | Clinician / Patient Name | Email | Password | Assigned Cohort / Destination |
+| :--- | :--- | :--- | :--- | :--- |
+| **Attending Clinician 1** | **Dr. Sarah Chen, MD** | `clinician@demo.com` | `clinician123` | Assigned: **David Rodriguez**, **Sarah Jenkins** |
+| **Attending Clinician 2** | **Dr. James Wong, MD** | `clinician2@demo.com` | `clinician123` | Assigned: **Elena Rostova** |
+| **Enrolled Patient** | **David Rodriguez** | `patient@demo.com` | `demo123` | `/patient` (Patient Portal & Timeline) |
+| **Registered Patient** | **Sahil** | `sahildh@gmail.com` | *(Registered)* | Unassigned Intake (Available for doctor claiming) |
 
 ### Pre-Seeded Clinical Scenarios:
 1. **Scenario 1 — Normal Recovery (Sarah Jenkins, MRN-2026-001):**
-   - *Procedure:* Laparoscopic Cholecystectomy
-   - *Trajectory:* Days 1, 3, and 7 showing clean wound closure, pain dropping from 4/10 to 1/10, low AI concern (14% $\to$ 4%), all triaged as `reviewed`.
+   - *Attending Doctor:* Dr. Sarah Chen, MD
+   - *Procedure:* Total Knee Arthroplasty
+   - *Trajectory:* Days 1, 3, and 7 showing clean wound closure, pain dropping from 4/10 to 1/10, low AI concern, all triaged as `reviewed`.
 2. **Scenario 2 — High-Risk Escalation (David Rodriguez, MRN-2026-002):**
+   - *Attending Doctor:* Dr. Sarah Chen, MD
    - *Procedure:* Open Appendectomy
-   - *Trajectory:* Day 1 baseline $\to$ Day 3 spreading erythema $\to$ Day 7 acute fever ($38.9^\circ\text{C}$), cloudy discharge, and 89% AI concern score.
-   - *Status:* Automatically ranked **#1** in the clinician triage queue as a critical high-risk alert.
+   - *Trajectory:* Day 1 baseline $\to$ Day 3 spreading erythema $\to$ Day 7 acute fever ($38.9^\circ\text{C}$), cloudy purulent discharge, and elevated AI concern score (74%).
+   - *Status:* Automatically ranked **#1** in Dr. Chen's triage queue as a critical high-risk alert.
 3. **Scenario 3 — Photo Retake Request (Elena Rostova, MRN-2026-003):**
-   - *Procedure:* Hernia Mesh Repair
+   - *Attending Doctor:* Dr. James Wong, MD
+   - *Procedure:* Cesarean Delivery
    - *Trajectory:* Day 1 baseline $\to$ Day 3 blurry photo flagged as `retake_requested` $\to$ Day 4 daylight retake submitted and awaiting review.
+   - *Status:* Visible **only** in Dr. James Wong's dashboard and patient cohort. Dr. Chen cannot view Elena's symptoms.
 
 ---
 
@@ -210,10 +225,10 @@ DermaLens/
 │   │   ├── controllers/
 │   │   │   ├── authController.js         # User registration, login, and profile
 │   │   │   ├── checkinController.js      # Check-in review & triage status updates
-│   │   │   ├── clinicianController.js    # Triage queue ranking & clinical stats
+│   │   │   ├── clinicianController.js    # Triage queue ranking & clinical stats (isolated by doctor)
 │   │   │   ├── episodeController.js      # Wound episode management
 │   │   │   ├── notificationController.js # Real-time notification badging & reads
-│   │   │   ├── patientController.js      # Patient creation, uploads, & timeline
+│   │   │   ├── patientController.js      # Patient creation, cohort listing, claiming, & timeline
 │   │   │   └── reviewController.js       # Review notes controller
 │   │   ├── middlewares/
 │   │   │   ├── authMiddleware.js         # JWT verification & role authorization
@@ -222,7 +237,7 @@ DermaLens/
 │   │   │   ├── CheckIn.js                # Check-in schema with ML outputs & symptoms
 │   │   │   ├── Episode.js                # Surgical episode schema
 │   │   │   ├── Notification.js           # Notification alerts schema
-│   │   │   ├── Patient.js                # Patient demographics & MRN schema
+│   │   │   ├── Patient.js                # Patient demographics, MRN, & assignedClinicianId
 │   │   │   └── User.js                   # Clinician & Patient authentication schema
 │   │   ├── routes/
 │   │   │   ├── authRoutes.js             # /api/auth routes
@@ -230,9 +245,11 @@ DermaLens/
 │   │   │   ├── clinicianRoutes.js        # /api/clinician routes
 │   │   │   ├── episodeRoutes.js          # /api/episodes routes
 │   │   │   ├── notificationRoutes.js     # /api/notifications routes
-│   │   │   └── patientRoutes.js          # /api/patients routes
+│   │   │   └── patientRoutes.js          # /api/patients routes (cohort, claim, delete)
 │   │   ├── services/
 │   │   │   └── mlClient.js               # Axios client forwarding photos to FastAPI
+│   │   ├── utils/
+│   │   │   └── clinicianPatientAccess.js # Physician-patient authorization & resolution
 │   │   └── app.js                        # Express application configuration & CORS
 │   ├── uploads/                          # Stored wound photos (.gitignore tracked)
 │   ├── .env.example                      # Backend environment variable template
@@ -243,14 +260,19 @@ DermaLens/
 ├── frontend/                             # Next.js 14 Client Application (Port 3000)
 │   ├── src/
 │   │   ├── app/
+│   │   │   ├── api/
+│   │   │   │   ├── auth/register/        # Secure Next.js registration & MongoDB sync
+│   │   │   │   └── clinical/report/      # Official clinical PDF report generator
 │   │   │   ├── clinician/
-│   │   │   │   ├── page.tsx              # Clinician prioritized triage queue
-│   │   │   │   └── patients/page.tsx     # Surgical patient cohort directory
+│   │   │   │   ├── page.tsx              # Clinician prioritized triage queue (isolated by doctor)
+│   │   │   │   └── patients/page.tsx     # Doctor care cohort & unassigned intake claiming
 │   │   │   ├── patient/
 │   │   │   │   ├── check-in/page.tsx     # Guided photo capture & symptom check-in
-│   │   │   │   ├── timeline/page.tsx     # Wound trajectory scrubber & PDF export
+│   │   │   │   ├── timeline/page.tsx     # Wound trajectory scrubber with 403 isolation
 │   │   │   │   └── page.tsx              # Patient home dashboard
-│   │   │   ├── login/page.tsx            # Login with one-click demo credentials
+│   │   │   ├── login/page.tsx            # Unified login with demo credentials
+│   │   │   ├── signup/page.tsx           # Registration portal (Patient / Clinician)
+│   │   │   ├── settings/page.tsx         # User profile, credentials & preferences
 │   │   │   ├── globals.css               # Design system, tokens, and animations
 │   │   │   ├── layout.tsx                # Root layout with Providers & Toast
 │   │   │   ├── page.tsx                  # Public landing & feature showcase
@@ -267,6 +289,7 @@ DermaLens/
 │   │   │   └── ui/                       # Accessible UI components (Card, Button, Dialog)
 │   │   ├── lib/
 │   │   │   ├── auth.ts                   # NextAuth credentials provider configuration
+│   │   │   ├── backendSession.ts         # Cross-tier Express JWT token & clinician sync
 │   │   │   └── utils.ts                  # Class merger and date formatters
 │   │   └── middleware.ts                 # Edge route protection & RBAC redirector
 │   ├── .env.example                      # Frontend environment variable template
@@ -404,17 +427,27 @@ DEBUG=True
 ### 🩺 Clinician Triage (`/api/clinician`)
 | Method | Endpoint | Description | Auth Required |
 | :--- | :--- | :--- | :--- |
-| `GET` | `/api/clinician/queue` | Prioritized triage queue sorted by clinical risk | Optional |
-| `GET` | `/api/clinician/stats` | Triage statistics (total, pending, flagged, reviewed) | Optional |
+| `GET` | `/api/clinician/queue` | Prioritized triage queue scoped to acting doctor's assigned patients | Yes (`X-Clinician-Email` or Bearer) |
+| `GET` | `/api/clinician/stats` | Triage statistics scoped to acting doctor's cohort | Yes (`X-Clinician-Email` or Bearer) |
 
-### 📝 Patient Check-Ins (`/api/checkins` & `/api/patients`)
+### 📝 Patient Check-Ins & Cohort Management (`/api/checkins` & `/api/patients`)
 | Method | Endpoint | Description | Auth Required |
 | :--- | :--- | :--- | :--- |
+| `GET` | `/api/patients/clinicians` | Fetch directory of verified hospital surgeons, specialties, and active caseloads | No / Authenticated |
+| `GET` | `/api/patients?scope=assigned` | List patients assigned to acting clinician's cohort with mutual consent | Yes (`X-Clinician-Email` or Bearer) |
+| `GET` | `/api/patients?scope=incoming_requests` | List patient care requests awaiting acting clinician's consent | Yes (`X-Clinician-Email` or Bearer) |
+| `GET` | `/api/patients?scope=unassigned` | List unassigned intake patients awaiting physician assignment | Yes (`X-Clinician-Email` or Bearer) |
+| `POST` | `/api/patients/:id/claim` | Clinician offers care to an unassigned patient (sets `pending_patient_consent`) | Yes (Clinician) |
+| `POST` | `/api/patients/:id/cancel-offer` | Clinician cancels/withdraws their pending care offer | Yes (Clinician) |
+| `POST` | `/api/patients/:id/patient-consent` | Patient accepts or declines doctor's care offer (`action: 'accept' \| 'decline'`) | Yes (Patient) |
+| `POST` | `/api/patients/:id/request-doctor` | Patient chooses preferred doctor with doctor consent (`{ clinicianId }`) | Yes (Patient) |
+| `POST` | `/api/patients/:id/doctor-consent` | Doctor grants or declines consent for patient request (`action: 'accept' \| 'decline'`) | Yes (Clinician) |
+| `POST` | `/api/patients/:id/release-doctor` | Patient releases current doctor assignment to choose a different surgeon | Yes (Patient or Clinician) |
+| `DELETE` | `/api/patients/:id` | Remove a patient profile and associated check-ins | Yes (Clinician) |
 | `POST` | `/api/patients/:id/checkins` | Submit wound photo (multipart) + symptom flags | No |
-| `GET` | `/api/patients/:id/timeline` | Fetch chronological wound check-ins for a patient | No |
-| `GET` | `/api/patients/timeline` | Fetch timeline for the active demo patient | No |
-| `GET` | `/api/patients` | List all registered patients | No |
-| `PATCH` | `/api/checkins/:id/review` | Update triage status (`reviewed`, `escalated`, etc.) & clinician notes | No |
+| `GET` | `/api/patients/:id/timeline` | Fetch chronological check-ins (enforces doctor-patient isolation with `403 Forbidden`) | Yes (Assigned Clinician or Patient) |
+| `GET` | `/api/patients/timeline` | Fetch timeline for the authenticated patient | Yes |
+| `PATCH` | `/api/checkins/:id/review` | Update triage status (`reviewed`, `escalated`, etc.) & clinician notes | Yes (Assigned Clinician) |
 
 ### 🔔 Notifications & Badging (`/api/notifications`)
 | Method | Endpoint | Description | Auth Required |

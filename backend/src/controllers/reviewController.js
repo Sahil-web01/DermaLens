@@ -1,4 +1,5 @@
 import CheckIn from '../models/CheckIn.js';
+import { resolveActingClinician, loadPatientIfAccessible, accessDenied } from '../utils/clinicianPatientAccess.js';
 
 /**
  * POST /api/reviews/:checkInId
@@ -19,6 +20,14 @@ export const submitReview = async (req, res) => {
         success: false,
         message: 'Check-in not found.',
       });
+    }
+
+    const clinician = await resolveActingClinician(req);
+    if (clinician) {
+      const allowed = await loadPatientIfAccessible(checkIn.patientId, clinician);
+      if (!allowed) {
+        return accessDenied(res);
+      }
     }
 
     if (reviewStatus) {
@@ -63,6 +72,15 @@ export const getReviewHistory = async (req, res) => {
         success: false,
         message: 'Check-in not found.',
       });
+    }
+
+    const clinician = await resolveActingClinician(req);
+    if (clinician) {
+      const full = await CheckIn.findById(checkInId).populate('patientId');
+      const allowed = await loadPatientIfAccessible(full?.patientId, clinician);
+      if (!allowed) {
+        return accessDenied(res);
+      }
     }
 
     return res.status(200).json({
