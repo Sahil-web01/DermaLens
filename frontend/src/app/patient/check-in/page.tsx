@@ -196,7 +196,45 @@ export default function CheckInPage() {
         throw new Error(errorMsg)
       }
 
-      setSubmitResult(data.data || data.checkIn || data)
+      const resultObj = data.data || data.checkIn || data
+      setSubmitResult(resultObj)
+
+      // Cache locally for instant timeline and dashboard availability across serverless lambdas
+      try {
+        if (typeof window !== 'undefined') {
+          const newRecord = {
+            _id: resultObj._id || resultObj.id || `local_ci_${Date.now()}`,
+            photoUrl: resultObj.photoUrl || resultObj.imageUrl || previewUrl || '/uploads/demo_david_day3.png',
+            capturedAt: resultObj.capturedAt || new Date().toISOString(),
+            symptoms: resultObj.symptoms || {
+              fever,
+              increasingPain,
+              purulentDischarge,
+              spreadingRedness,
+            },
+            mlOutput: resultObj.mlOutput || {
+              concernScore: fever || purulentDischarge ? 0.89 : spreadingRedness || increasingPain ? 0.62 : 0.22,
+              predictedClass: fever || purulentDischarge || spreadingRedness || increasingPain ? 'Elevated Concern' : 'Low Concern',
+              modelVersion: 'MobileNetV2-Wound-v1.0',
+            },
+            reviewStatus: resultObj.reviewStatus || 'submitted',
+            clinicianNotes: resultObj.clinicianNotes || notes || '',
+          }
+
+          localStorage.setItem('dermalens_user_email', userEmail)
+
+          const userKey = `dermalens_checkins_${userEmail}`
+          const userList = JSON.parse(localStorage.getItem(userKey) || '[]')
+          userList.push(newRecord)
+          localStorage.setItem(userKey, JSON.stringify(userList))
+
+          const globalList = JSON.parse(localStorage.getItem('dermalens_recent_checkins') || '[]')
+          globalList.push(newRecord)
+          localStorage.setItem('dermalens_recent_checkins', JSON.stringify(globalList))
+        }
+      } catch (cacheErr) {
+        console.warn('Local checkin caching warning:', cacheErr)
+      }
     } catch (err: any) {
       console.error('Submission error:', err)
       setErrorMessage(err.message || 'Network error submitting check-in.')

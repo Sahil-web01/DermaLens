@@ -4,79 +4,73 @@ import { prisma, ensureDbReady } from '@/lib/prisma'
 
 export const dynamic = 'force-dynamic'
 
-export async function GET(request: NextRequest) {
+export async function GET(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
   try {
     ensureDbReady()
     const session = await auth()
-    const { searchParams } = new URL(request.url)
-    const emailParam = searchParams.get('email')
-    const nameParam = searchParams.get('name')
-    const patientIdParam = searchParams.get('patientId') || searchParams.get('id')
+    const patientId = params?.id
 
-    const userEmail = (emailParam || session?.user?.email || '').trim().toLowerCase()
-    const userName = (nameParam || session?.user?.name || '').trim()
+    // 1. Try remote Express backend if configured
+    const remoteBackend =
+      process.env.BACKEND_URL ||
+      (process.env.NEXT_PUBLIC_API_URL?.startsWith('https://')
+        ? process.env.NEXT_PUBLIC_API_URL
+        : null)
 
-    const candidateEmails = userEmail ? [userEmail] : []
-    if (userEmail === 'sahil@gmail.com') candidateEmails.push('sahildh@gmail.com')
-    if (userEmail === 'sahildh@gmail.com') candidateEmails.push('sahil@gmail.com')
-
-    // 1. Try remote Express backend if configured with an external HTTPS URL
-    const remoteBackend = process.env.BACKEND_URL || (process.env.NEXT_PUBLIC_API_URL?.startsWith('https://') ? process.env.NEXT_PUBLIC_API_URL : null)
     if (remoteBackend) {
       try {
-        const query = userEmail ? `?email=${encodeURIComponent(userEmail)}&name=${encodeURIComponent(userName)}` : ''
-        const targetEndpoint = patientIdParam ? `/patients/${patientIdParam}/timeline` : `/patients/timeline${query}`
-        const backendRes = await fetch(`${remoteBackend.replace(/\/$/, '')}${targetEndpoint}`, {
-          headers: {
-            'Content-Type': 'application/json',
-            ...(session?.user?.email ? { 'X-Clinician-Email': session.user.email, 'X-User-Email': session.user.email } : {}),
-          },
-          signal: AbortSignal.timeout(3500),
-        })
+        const backendRes = await fetch(
+          `${remoteBackend.replace(/\/$/, '')}/patients/${patientId}/timeline`,
+          {
+            headers: {
+              'Content-Type': 'application/json',
+              ...(session?.user?.email
+                ? { 'X-Clinician-Email': session.user.email, 'X-User-Email': session.user.email }
+                : {}),
+            },
+            signal: AbortSignal.timeout(3500),
+          }
+        )
         if (backendRes.ok) {
           const data = await backendRes.json()
           return NextResponse.json(data)
         }
       } catch (e) {
-        console.warn('[Timeline API] Remote backend fetch error (falling back to Prisma):', e)
+        console.warn('[Patient ID Timeline API] Remote backend fetch error (falling back to Prisma):', e)
       }
     }
 
-    // 2. Fetch directly from Prisma SQLite
-    const userWhere: any = {}
-    if (patientIdParam) {
-      userWhere.OR = [
-        { id: patientIdParam },
-        ...(candidateEmails.length > 0 ? [{ email: { in: candidateEmails } }] : []),
-      ]
-    } else if (candidateEmails.length > 0) {
-      userWhere.email = { in: candidateEmails }
-    }
-
-    let user = Object.keys(userWhere).length > 0
-      ? await prisma.user.findFirst({
-          where: userWhere,
+    // 2. Local Fallback via Prisma SQLite
+    let user = await prisma.user.findFirst({
+      where: {
+        OR: [
+          { id: patientId },
+          { email: patientId },
+        ],
+      },
+      include: {
+        patientEpisodes: {
           include: {
-            patientEpisodes: {
+            checkIns: {
               include: {
-                checkIns: {
+                clinicianReview: {
                   include: {
-                    clinicianReview: {
-                      include: {
-                        clinician: true,
-                      },
-                    },
+                    clinician: true,
                   },
-                  orderBy: { capturedAt: 'asc' },
                 },
               },
+              orderBy: { capturedAt: 'asc' },
             },
-            assignedClinician: true,
           },
-        })
-      : null
+        },
+        assignedClinician: true,
+      },
+    })
 
-    // If no user found, fallback to patient@demo.com or first available patient
+    // If not found by exact ID, fallback to demo patient
     if (!user) {
       user = await prisma.user.findFirst({
         where: { email: 'patient@demo.com' },
@@ -100,36 +94,12 @@ export async function GET(request: NextRequest) {
       })
     }
 
-    if (!user) {
-      user = await prisma.user.findFirst({
-        where: { role: 'PATIENT' },
-        include: {
-          patientEpisodes: {
-            include: {
-              checkIns: {
-                include: {
-                  clinicianReview: {
-                    include: {
-                      clinician: true,
-                    },
-                  },
-                },
-                orderBy: { capturedAt: 'asc' },
-              },
-            },
-          },
-          assignedClinician: true,
-        },
-      })
-    }
-
-    // Collect all check-ins across ALL episodes for this patient
+    // Collect all check-ins across all episodes
     let checkIns: any[] = (user?.patientEpisodes || [])
       .flatMap((ep) => ep.checkIns || [])
       .sort((a, b) => new Date(a.capturedAt).getTime() - new Date(b.capturedAt).getTime())
 
-    // If this specific patient doesn't have check-ins yet, provide demo check-in history
-    // so recovery timeline is never empty
+    // If check-ins are empty, borrow demo check-in history so timeline is never blank
     if (checkIns.length === 0) {
       const demoPatient = await prisma.user.findFirst({
         where: { email: 'patient@demo.com' },
@@ -182,12 +152,14 @@ export async function GET(request: NextRequest) {
     })
 
     const patientObj = {
-      _id: user?.id || 'demo_patient_id',
-      name: user?.name || userName || 'David Rodriguez',
-      email: user?.email || userEmail || 'patient@demo.com',
-      mrn: `MRN-${new Date().getFullYear()}-${(user?.id || '0001').slice(-4).toUpperCase()}`,
+      _id: user?.id || patientId,
+      name: user?.name || 'David Rodriguez',
+      email: user?.email || 'patient@demo.com',
+      mrn: `MRN-${new Date().getFullYear()}-${(user?.id || patientId || '0001').slice(-4).toUpperCase()}`,
       surgeryType: episode?.procedureLabel || 'Open Appendectomy',
-      surgeryDate: episode?.surgeryDate ? (episode.surgeryDate instanceof Date ? episode.surgeryDate.toISOString() : String(episode.surgeryDate)) : new Date().toISOString(),
+      surgeryDate: episode?.surgeryDate
+        ? (episode.surgeryDate instanceof Date ? episode.surgeryDate.toISOString() : String(episode.surgeryDate))
+        : new Date().toISOString(),
       assignedClinicianId: user?.assignedClinicianId || null,
       assignedClinician: user?.assignedClinician
         ? {
@@ -206,7 +178,7 @@ export async function GET(request: NextRequest) {
       timeline,
     })
   } catch (error: any) {
-    console.error('Patient timeline API error:', error)
+    console.error('Patient [id] timeline API error:', error)
     return NextResponse.json(
       { success: false, message: error.message || 'Failed to load timeline' },
       { status: 500 }

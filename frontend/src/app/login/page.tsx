@@ -110,15 +110,23 @@ function LoginForm() {
       if (result?.error) {
         setFormError('Invalid email or password. If you do not have an account, click "Create Account" above.')
       } else {
-        await syncBackendAuthToken(email.trim().toLowerCase(), password)
+        const cleanEmail = email.trim().toLowerCase()
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('dermalens_user_email', cleanEmail)
+        }
+        await syncBackendAuthToken(cleanEmail, password)
         // Fetch session to determine role accurately
         const sessionRes = await fetch('/api/auth/session').catch(() => null)
         const sessionData = sessionRes?.ok ? await sessionRes.json().catch(() => null) : null
         const userRole = sessionData?.user?.role
+        if (typeof window !== 'undefined') {
+          if (sessionData?.user?.name) localStorage.setItem('dermalens_user_name', sessionData.user.name)
+          if (userRole) localStorage.setItem('dermalens_user_role', userRole)
+        }
 
         let targetUrl = callbackUrl && callbackUrl !== '/' && callbackUrl !== '/login' && callbackUrl !== '/signup'
           ? callbackUrl
-          : (userRole === 'CLINICIAN' || email.includes('clinician') ? '/clinician' : '/patient')
+          : (userRole === 'CLINICIAN' || cleanEmail.includes('clinician') ? '/clinician' : '/patient')
 
         // Full location navigation ensures fresh cookies, session hydration, and zero stale cache
         window.location.href = targetUrl
@@ -188,7 +196,13 @@ function LoginForm() {
         switchMode('signin')
         setFormSuccess('Account recognized. Please enter your password to sign in.')
       } else {
-        await syncBackendAuthToken(email.trim().toLowerCase(), password)
+        const cleanEmail = email.trim().toLowerCase()
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('dermalens_user_email', cleanEmail)
+          if (name) localStorage.setItem('dermalens_user_name', name.trim())
+          if (role) localStorage.setItem('dermalens_user_role', role)
+        }
+        await syncBackendAuthToken(cleanEmail, password)
         const dest = role === 'CLINICIAN' ? '/clinician' : '/patient'
         window.location.href = dest
       }

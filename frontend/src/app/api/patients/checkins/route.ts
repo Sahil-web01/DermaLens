@@ -72,7 +72,33 @@ export async function POST(request: NextRequest) {
     })
 
     if (!patient) {
-      // Find default patient or create
+      // Create patient if they don't exist yet
+      try {
+        patient = await prisma.user.create({
+          data: {
+            email,
+            name: patientName || 'Patient',
+            password: 'demo_password_hash',
+            role: 'PATIENT',
+          },
+          include: {
+            patientEpisodes: true,
+            assignedClinician: true,
+          },
+        })
+      } catch {
+        // If unique constraint conflict, fetch existing
+        patient = await prisma.user.findFirst({
+          where: { email },
+          include: {
+            patientEpisodes: true,
+            assignedClinician: true,
+          },
+        })
+      }
+    }
+
+    if (!patient) {
       patient = await prisma.user.findFirst({
         where: { email: 'patient@demo.com' },
         include: {
@@ -83,18 +109,10 @@ export async function POST(request: NextRequest) {
     }
 
     if (!patient) {
-      patient = await prisma.user.create({
-        data: {
-          email,
-          name: patientName,
-          password: 'demo_password_hash',
-          role: 'PATIENT',
-        },
-        include: {
-          patientEpisodes: true,
-          assignedClinician: true,
-        },
-      })
+      return NextResponse.json(
+        { success: false, message: 'Patient profile not found or initialized' },
+        { status: 400 }
+      )
     }
 
     let episode = patient.patientEpisodes?.[0]

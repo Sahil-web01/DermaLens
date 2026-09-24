@@ -59,16 +59,61 @@ export default function PatientDashboard() {
 
   const loadData = useCallback(async () => {
     try {
-      const email = session?.user?.email
-      const name = session?.user?.name
+      const email =
+        session?.user?.email ||
+        (typeof window !== 'undefined' ? localStorage.getItem('dermalens_user_email') : '') ||
+        'patient@demo.com'
+      const name =
+        session?.user?.name ||
+        (typeof window !== 'undefined' ? localStorage.getItem('dermalens_user_name') : '') ||
+        ''
       const query = email ? `?email=${encodeURIComponent(email)}&name=${encodeURIComponent(name || '')}` : ''
       const headers = getBackendAuthHeaders(session)
-      const res = await fetch(`${getApiBase()}/patients/timeline${query}`, { headers })
-      if (res.ok) {
-        const data = await res.json()
-        if (data.patient) setPatient(data.patient)
-        if (data.timeline) setTimeline(data.timeline)
+      let remoteTimeline: CheckInRecord[] = []
+
+      try {
+        const res = await fetch(`${getApiBase()}/patients/timeline${query}`, { headers })
+        if (res.ok) {
+          const data = await res.json()
+          if (data.patient) setPatient(data.patient)
+          if (Array.isArray(data.timeline)) {
+            remoteTimeline = data.timeline
+          }
+        }
+      } catch (fetchErr) {
+        console.warn('Dashboard patient data fetch error:', fetchErr)
       }
+
+      // Merge locally cached check-ins
+      const merged: CheckInRecord[] = [...remoteTimeline]
+      if (typeof window !== 'undefined') {
+        try {
+          const normalizedEmail = email.toLowerCase().trim()
+          const userKey = `dermalens_checkins_${normalizedEmail}`
+          const userLocal: CheckInRecord[] = JSON.parse(localStorage.getItem(userKey) || '[]')
+          const globalLocal: CheckInRecord[] = JSON.parse(localStorage.getItem('dermalens_recent_checkins') || '[]')
+          const allLocal = [...userLocal, ...globalLocal]
+
+          for (const item of allLocal) {
+            if (item && item.capturedAt) {
+              const itemTime = new Date(item.capturedAt).getTime()
+              const exists = merged.some(
+                (m) =>
+                  m._id === item._id ||
+                  Math.abs(new Date(m.capturedAt).getTime() - itemTime) < 15000
+              )
+              if (!exists) {
+                merged.push(item)
+              }
+            }
+          }
+        } catch (storageErr) {
+          console.warn('Local checkin merge error:', storageErr)
+        }
+      }
+
+      merged.sort((a, b) => new Date(a.capturedAt).getTime() - new Date(b.capturedAt).getTime())
+      setTimeline(merged)
     } catch (err) {
       console.error('Failed to load patient data:', err)
     } finally {
@@ -77,9 +122,7 @@ export default function PatientDashboard() {
   }, [session?.user?.email, session?.user?.name])
 
   useEffect(() => {
-    if (session !== undefined) {
-      loadData()
-    }
+    loadData()
   }, [session, loadData])
 
   const handleAcceptOffer = async () => {
