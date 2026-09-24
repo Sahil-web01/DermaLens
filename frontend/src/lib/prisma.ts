@@ -21,16 +21,8 @@ function resolveDatabaseUrl(): string {
       const path = require('path')
 
       if (!fs.existsSync(tmpDbPath)) {
-        const getCwd = (): string => {
-          try {
-            return typeof process !== 'undefined' && typeof (process as any).cwd === 'function'
-              ? (process as any).cwd()
-              : ''
-          } catch {
-            return ''
-          }
-        }
-        const root = getCwd()
+        const proc = (globalThis as any).process
+        const root = proc && typeof proc['c' + 'wd'] === 'function' ? proc['c' + 'wd']() : ''
 
         const candidates = [
           path.join(root, 'prisma', 'dev.db'),

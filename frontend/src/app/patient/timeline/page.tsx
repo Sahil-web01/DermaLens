@@ -12,8 +12,8 @@ import { ArrowLeft, Calendar, Camera, AlertCircle, CheckCircle2, ShieldAlert, Pr
 import { ClinicalReportModal } from '@/components/clinical/clinical-report-modal'
 import { getBackendAuthHeaders } from '@/lib/backendSession'
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api'
-const BACKEND_BASE = API_BASE.replace(/\/api$/, '')
+import { getApiBase, resolvePhotoUrl } from '@/lib/apiConfig'
+
 
 interface CheckInRecord {
   _id: string
@@ -59,13 +59,12 @@ function TimelineContent() {
         const query = email ? `email=${encodeURIComponent(email)}&name=${encodeURIComponent(name || '')}` : ''
 
         const url = patientId
-          ? `${API_BASE}/patients/${patientId}/timeline`
-          : `${API_BASE}/patients/timeline${query ? `?${query}` : ''}`
+          ? `${getApiBase()}/patients/${patientId}/timeline`
+          : `${getApiBase()}/patients/timeline${query ? `?${query}` : ''}`
 
-        const headers = isClinician
-          ? getBackendAuthHeaders(session)
-          : undefined
-        const res = await fetch(url, headers ? { headers } : undefined)
+
+        const headers = getBackendAuthHeaders(session)
+        const res = await fetch(url, { headers })
         if (res.ok) {
           const data = await res.json()
           if (data.patient) setPatient(data.patient)
@@ -254,8 +253,9 @@ function TimelineContent() {
                     {currentItem.photoUrl ? (
                       /* eslint-disable-next-line @next/next/no-img-element */
                       <img
-                        src={currentItem.photoUrl.startsWith('http') ? currentItem.photoUrl : `${BACKEND_BASE}${currentItem.photoUrl}`}
+                        src={resolvePhotoUrl(currentItem.photoUrl)}
                         alt="Wound Capture"
+
                         className="w-full max-w-[420px] aspect-square rounded-xl object-contain shadow-md border border-border bg-slate-900/5 dark:bg-slate-900/40"
                         onError={(e) => {
                           const target = e.target as HTMLImageElement

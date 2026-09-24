@@ -24,8 +24,8 @@ import {
 } from 'lucide-react'
 import { ClinicalReportModal } from '@/components/clinical/clinical-report-modal'
 import { getBackendAuthHeaders } from '@/lib/backendSession'
+import { getApiBase } from '@/lib/apiConfig'
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api'
 
 interface Patient {
   _id: string
@@ -67,7 +67,7 @@ export default function PatientsListPage() {
             ? 'unassigned'
             : 'assigned'
 
-        const res = await fetch(`${API_BASE}/patients?scope=${scope}`, {
+        const res = await fetch(`${getApiBase()}/patients?scope=${scope}`, {
           headers: getBackendAuthHeaders(session),
         })
         if (res.ok) {
@@ -97,7 +97,7 @@ export default function PatientsListPage() {
   const handleDoctorConsent = async (id: string, action: 'accept' | 'decline', patientName: string) => {
     setActionLoadingId(id)
     try {
-      const res = await fetch(`${API_BASE}/patients/${id}/doctor-consent`, {
+      const res = await fetch(`${getApiBase()}/patients/${id}/doctor-consent`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -129,7 +129,7 @@ export default function PatientsListPage() {
   const handleOfferCare = async (id: string, name: string) => {
     setActionLoadingId(id)
     try {
-      const res = await fetch(`${API_BASE}/patients/${id}/claim`, {
+      const res = await fetch(`${getApiBase()}/patients/${id}/claim`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -155,7 +155,7 @@ export default function PatientsListPage() {
     if (!window.confirm(`Withdraw care offer to ${name}?`)) return
     setActionLoadingId(id)
     try {
-      const res = await fetch(`${API_BASE}/patients/${id}/cancel-offer`, {
+      const res = await fetch(`${getApiBase()}/patients/${id}/cancel-offer`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -179,7 +179,8 @@ export default function PatientsListPage() {
   const handleDeletePatient = async (id: string, name: string) => {
     if (!window.confirm(`Are you sure you want to remove patient "${name}"?`)) return
     try {
-      const res = await fetch(`${API_BASE}/patients/${id}`, {
+      const res = await fetch(`${getApiBase()}/patients/${id}`, {
+
         method: 'DELETE',
         headers: getBackendAuthHeaders(session),
       })

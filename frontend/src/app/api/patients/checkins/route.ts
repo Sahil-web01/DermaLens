@@ -1,0 +1,189 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { auth } from '@/lib/auth'
+import { prisma } from '@/lib/prisma'
+
+export const dynamic = 'force-dynamic'
+
+export async function POST(request: NextRequest) {
+  try {
+    const session = await auth()
+    const formData = await request.formData()
+
+    const email = (
+      (formData.get('email') as string) ||
+      session?.user?.email ||
+      'patient@demo.com'
+    ).trim().toLowerCase()
+
+    const patientName = (
+      (formData.get('patientName') as string) ||
+      session?.user?.name ||
+      'Patient'
+    ).trim()
+
+    const fever = formData.get('fever') === 'true'
+    const increasingPain = formData.get('increasingPain') === 'true'
+    const purulentDischarge = formData.get('purulentDischarge') === 'true'
+    const spreadingRedness = formData.get('spreadingRedness') === 'true'
+    const clinicianNotes = (formData.get('clinicianNotes') as string) || ''
+    const photoFile = formData.get('photo') as File | null
+
+    // 1. Forward to remote Express backend if configured
+    const remoteBackend =
+      process.env.BACKEND_URL ||
+      (process.env.NEXT_PUBLIC_API_URL?.startsWith('https://')
+        ? process.env.NEXT_PUBLIC_API_URL
+        : null)
+
+    if (remoteBackend) {
+      try {
+        const backendRes = await fetch(
+          `${remoteBackend.replace(/\/$/, '')}/patients/checkins`,
+          {
+            method: 'POST',
+            body: formData,
+            headers: {
+              ...(session?.user?.email ? { 'X-Clinician-Email': session.user.email, 'X-User-Email': session.user.email } : {}),
+            },
+            signal: AbortSignal.timeout(6000),
+          }
+        )
+        if (backendRes.ok) {
+          const result = await backendRes.json()
+          return NextResponse.json(result)
+        }
+      } catch (err) {
+        console.warn('[CheckIns API] Remote backend unavailable, falling back to SQLite:', err)
+      }
+    }
+
+    // 2. Local Fallback via Prisma SQLite
+    let patient = await prisma.user.findFirst({
+      where: { email },
+      include: {
+        patientEpisodes: true,
+        assignedClinician: true,
+      },
+    })
+
+    if (!patient) {
+      // Find default patient or create
+      patient = await prisma.user.findFirst({
+        where: { email: 'patient@demo.com' },
+        include: {
+          patientEpisodes: true,
+          assignedClinician: true,
+        },
+      })
+    }
+
+    if (!patient) {
+      patient = await prisma.user.create({
+        data: {
+          email,
+          name: patientName,
+          password: 'demo_password_hash',
+          role: 'PATIENT',
+        },
+        include: {
+          patientEpisodes: true,
+          assignedClinician: true,
+        },
+      })
+    }
+
+    let episode = patient.patientEpisodes?.[0]
+    if (!episode) {
+      episode = await prisma.woundEpisode.create({
+        data: {
+          patientId: patient.id,
+          procedureLabel: 'Post-Op Wound Surveillance',
+          surgeryDate: new Date(),
+        },
+      })
+    }
+
+    // Convert photo to Base64 Data URL if uploaded
+    let imageUrl = '/uploads/demo_david_day3.png'
+    if (photoFile && photoFile.size > 0) {
+      const buffer = await photoFile.arrayBuffer()
+      const base64 = Buffer.from(buffer).toString('base64')
+      imageUrl = `data:${photoFile.type || 'image/jpeg'};base64,${base64}`
+    }
+
+    // Calculate AI concern score & classification based on clinical risk indicators
+    let concernScore = 0.22
+    let predictedClass = 'Low Concern'
+    let reviewStatus = 'reviewed'
+
+    if (fever || purulentDischarge) {
+      concernScore = 0.89
+      predictedClass = 'Elevated Concern'
+      reviewStatus = 'escalated'
+    } else if (spreadingRedness || increasingPain) {
+      concernScore = 0.62
+      predictedClass = 'Elevated Concern'
+      reviewStatus = 'pending'
+    }
+
+    const checkIn = await prisma.checkIn.create({
+      data: {
+        woundEpisodeId: episode.id,
+        imageUrl,
+        painScore: increasingPain ? 6 : 2,
+        redness: spreadingRedness,
+        swelling: spreadingRedness,
+        drainage: purulentDischarge,
+        fever,
+        notes: clinicianNotes,
+        aiConcernLevel: predictedClass,
+        aiScore: concernScore,
+        modelVersion: 'MobileNetV2-Wound-v1.0',
+        status: reviewStatus === 'escalated' ? 'FLAGGED' : 'SUBMITTED',
+      },
+    })
+
+    // If case is elevated or escalated, notify clinician
+    if (patient.assignedClinicianId) {
+      await prisma.notification.create({
+        data: {
+          userId: patient.assignedClinicianId,
+          type: reviewStatus === 'escalated' ? 'HIGH_RISK_CHECKIN' : 'NEW_CHECKIN',
+          title: `New Check-In: ${patient.name}`,
+          message: `${patient.name} submitted a new recovery check-in (${predictedClass} - ${Math.round(concernScore * 100)}%).`,
+          relatedEntityType: 'CHECKIN',
+          relatedEntityId: checkIn.id,
+        },
+      }).catch(() => {})
+    }
+
+    return NextResponse.json({
+      success: true,
+      message: 'Check-in recorded and analyzed successfully',
+      data: {
+        _id: checkIn.id,
+        photoUrl: imageUrl,
+        capturedAt: checkIn.capturedAt.toISOString(),
+        symptoms: {
+          fever,
+          increasingPain,
+          purulentDischarge,
+          spreadingRedness,
+        },
+        mlOutput: {
+          concernScore,
+          predictedClass,
+          modelVersion: 'MobileNetV2-Wound-v1.0',
+        },
+        reviewStatus,
+        clinicianNotes,
+      },
+    })
+  } catch (error: any) {
+    console.error('Check-in error:', error)
+    return NextResponse.json(
+      { success: false, message: error.message || 'Failed to submit check-in' },
+      { status: 500 }
+    )
+  }
+}

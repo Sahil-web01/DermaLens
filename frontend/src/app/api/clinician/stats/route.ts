@@ -26,13 +26,20 @@ export async function GET() {
       return acc
     }, {} as Record<string, number>)
 
-    return NextResponse.json({
+    const payload = {
       total: Object.values(statMap).reduce((a, b) => a + b, 0),
       pending: statMap.submitted || 0,
       flagged: statMap.flagged || 0,
       underReview: statMap.under_review || 0,
       reviewed: statMap.reviewed || 0,
+    }
+
+    return NextResponse.json({
+      success: true,
+      data: payload,
+      ...payload,
     })
+
   } catch (error) {
     console.error('Get clinician stats error:', error)
     return NextResponse.json({ error: 'Failed to fetch stats' }, { status: 500 })

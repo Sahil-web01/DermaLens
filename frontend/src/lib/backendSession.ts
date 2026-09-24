@@ -1,4 +1,5 @@
 import type { Session } from 'next-auth'
+import { getApiBase } from './apiConfig'
 
 const TOKEN_KEY = 'dermalens_backend_token'
 
@@ -10,13 +11,15 @@ export function getBackendAuthHeaders(session: Session | null | undefined): Head
   }
   if (session?.user?.email) {
     headers['X-Clinician-Email'] = session.user.email
+    headers['X-User-Email'] = session.user.email
+    headers['X-Patient-Email'] = session.user.email
   }
   return headers
 }
 
 /** After NextAuth login, obtain matching Express JWT for protected MongoDB routes. */
 export async function syncBackendAuthToken(email: string, password: string): Promise<void> {
-  const apiBase = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api').replace(/\/$/, '')
+  const apiBase = getApiBase()
   try {
     const res = await fetch(`${apiBase}/auth/login`, {
       method: 'POST',

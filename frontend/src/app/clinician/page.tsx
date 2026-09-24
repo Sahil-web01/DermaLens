@@ -35,9 +35,8 @@ import {
 import { ClinicalReportModal } from '@/components/clinical/clinical-report-modal'
 import { formatDateTime } from '@/lib/utils'
 import { getBackendAuthHeaders } from '@/lib/backendSession'
+import { getApiBase, resolvePhotoUrl } from '@/lib/apiConfig'
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api'
-const BACKEND_BASE = API_BASE.replace(/\/api$/, '')
 
 interface QueueItem {
   _id: string
@@ -99,17 +98,17 @@ export default function ClinicianDashboard() {
     const authHeaders = getBackendAuthHeaders(session)
     try {
       // 1. Fetch queue prioritized by high risk
-      const qRes = await fetch(`${API_BASE}/clinician/queue`, { headers: authHeaders })
+      const qRes = await fetch(`${getApiBase()}/clinician/queue`, { headers: authHeaders })
       if (qRes.ok) {
         const qData = await qRes.json()
         setQueue(qData.data || [])
       }
 
       // 2. Fetch stats
-      const sRes = await fetch(`${API_BASE}/clinician/stats`, { headers: authHeaders })
+      const sRes = await fetch(`${getApiBase()}/clinician/stats`, { headers: authHeaders })
       if (sRes.ok) {
         const sData = await sRes.json()
-        setStats(sData.data || stats)
+        setStats(sData.data || sData || stats)
       }
     } catch (err) {
       console.error('Error fetching clinician queue:', err)
@@ -135,7 +134,8 @@ export default function ClinicianDashboard() {
     setIsSubmittingReview(true)
 
     try {
-      const res = await fetch(`${API_BASE}/checkins/${selectedCase._id}/review`, {
+      const res = await fetch(`${getApiBase()}/checkins/${selectedCase._id}/review`, {
+
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
@@ -318,8 +318,9 @@ export default function ClinicianDashboard() {
                         {item.photoUrl ? (
                           /* eslint-disable-next-line @next/next/no-img-element */
                           <img
-                            src={item.photoUrl.startsWith('http') ? item.photoUrl : `${BACKEND_BASE}${item.photoUrl}`}
+                            src={resolvePhotoUrl(item.photoUrl)}
                             alt="Wound site"
+
                             className="h-full w-full object-cover"
                             onError={(e) => {
                               (e.target as HTMLElement).style.display = 'none'
@@ -622,7 +623,7 @@ export default function ClinicianDashboard() {
                     {selectedCase.photoUrl ? (
                       /* eslint-disable-next-line @next/next/no-img-element */
                       <img
-                        src={selectedCase.photoUrl.startsWith('http') ? selectedCase.photoUrl : `${BACKEND_BASE}${selectedCase.photoUrl}`}
+                        src={resolvePhotoUrl(selectedCase.photoUrl)}
                         alt="High-resolution clinical wound photo"
                         className="w-full h-full object-contain"
                       />
@@ -634,13 +635,14 @@ export default function ClinicianDashboard() {
                         {formatDateTime(selectedCase.capturedAt)}
                       </span>
                       <a
-                        href={selectedCase.photoUrl.startsWith('http') ? selectedCase.photoUrl : `${BACKEND_BASE}${selectedCase.photoUrl}`}
+                        href={resolvePhotoUrl(selectedCase.photoUrl)}
                         target="_blank"
                         rel="noreferrer"
                         className="pointer-events-auto px-2 py-1 rounded-md bg-black/70 backdrop-blur-md text-white text-xs hover:bg-black/90 transition-colors flex items-center gap-1"
                       >
                         <Maximize2 className="h-3 w-3" /> Full Res
                       </a>
+
                     </div>
                   </div>
                 </div>

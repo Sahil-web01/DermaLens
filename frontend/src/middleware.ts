@@ -15,8 +15,12 @@ export default auth((req) => {
 
   // 1. Unauthenticated request protection
   if (!isLoggedIn && !isPublicRoute) {
-    // Return 401 JSON error for API calls
+    // Return 401 JSON error for API calls (allow if auth headers are present)
     if (pathname.startsWith('/api')) {
+      const hasAuthHeader = req.headers.get('authorization') || req.headers.get('x-clinician-email') || req.headers.get('x-user-email')
+      if (hasAuthHeader) {
+        return NextResponse.next()
+      }
       return NextResponse.json(
         { error: 'Unauthorized. Please sign in to access this resource.' },
         { status: 401 }
@@ -57,7 +61,7 @@ export default auth((req) => {
     if (pathname === '/patient' || pathname.startsWith('/patient/check-in')) {
       return NextResponse.redirect(new URL('/clinician', req.nextUrl.origin))
     }
-    if (pathname.startsWith('/api/patient')) {
+    if (pathname === '/api/patient' || pathname.startsWith('/api/patient/')) {
       return NextResponse.json(
         { error: 'Forbidden. Patient privileges required.' },
         { status: 403 }

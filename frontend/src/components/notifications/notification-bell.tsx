@@ -15,8 +15,7 @@ import {
   DropdownMenuLabel,
 } from '@/components/ui/dropdown-menu'
 import { getBackendAuthHeaders } from '@/lib/backendSession'
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api'
+import { getApiBase } from '@/lib/apiConfig'
 
 interface NotificationItem {
   _id: string
@@ -40,7 +39,7 @@ export function NotificationBell() {
 
   const fetchUnreadCount = useCallback(async () => {
     try {
-      const res = await fetch(`${API_BASE}/notifications/unread-count?role=${role}`, {
+      const res = await fetch(`${getApiBase()}/notifications/unread-count?role=${role}`, {
         headers: authHeaders,
       })
       if (res.ok) {
@@ -55,7 +54,7 @@ export function NotificationBell() {
   const fetchNotifications = useCallback(async () => {
     setIsLoading(true)
     try {
-      const res = await fetch(`${API_BASE}/notifications?role=${role}`, {
+      const res = await fetch(`${getApiBase()}/notifications?role=${role}`, {
         headers: authHeaders,
       })
       if (res.ok) {
@@ -85,7 +84,7 @@ export function NotificationBell() {
 
   const markAsRead = async (id: string) => {
     try {
-      await fetch(`${API_BASE}/notifications/read`, {
+      await fetch(`${getApiBase()}/notifications/read`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ notificationIds: [id] }),
@@ -101,7 +100,7 @@ export function NotificationBell() {
 
   const markAllAsRead = async () => {
     try {
-      await fetch(`${API_BASE}/notifications/read-all`, {
+      await fetch(`${getApiBase()}/notifications/read-all`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ role }),

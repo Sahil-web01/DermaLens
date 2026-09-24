@@ -6,9 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { useSession } from 'next-auth/react'
 import { getBackendAuthHeaders } from '@/lib/backendSession'
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api'
-const BACKEND_BASE = API_BASE.replace(/\/api$/, '')
+import { getApiBase, resolvePhotoUrl } from '@/lib/apiConfig'
 
 interface ClinicalReportModalProps {
   patientId?: string | null
@@ -28,10 +26,11 @@ export function ClinicalReportModal({ patientId, isOpen, onClose }: ClinicalRepo
     async function loadReportData() {
       setLoading(true)
       try {
+        const apiBase = getApiBase()
         const url =
           patientId && patientId !== 'default' && patientId !== 'me'
-            ? `${API_BASE}/patients/${patientId}/timeline`
-            : `${API_BASE}/patients/timeline`
+            ? `${apiBase}/patients/${patientId}/timeline`
+            : `${apiBase}/patients/timeline`
 
         const res = await fetch(url, { headers: getBackendAuthHeaders(session) })
         if (res.ok) {
@@ -214,7 +213,7 @@ export function ClinicalReportModal({ patientId, isOpen, onClose }: ClinicalRepo
                               {item.photoUrl ? (
                                 /* eslint-disable-next-line @next/next/no-img-element */
                                 <img
-                                  src={item.photoUrl.startsWith('http') ? item.photoUrl : `${BACKEND_BASE}${item.photoUrl}`}
+                                  src={resolvePhotoUrl(item.photoUrl)}
                                   alt="Wound photo"
                                   className="h-12 w-12 rounded object-cover border border-slate-200"
                                 />

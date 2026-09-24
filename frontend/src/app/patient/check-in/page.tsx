@@ -21,8 +21,7 @@ import {
   ShieldAlert,
   Info,
 } from 'lucide-react'
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api'
+import { getApiBase } from '@/lib/apiConfig'
 
 export default function CheckInPage() {
   const router = useRouter()
@@ -75,8 +74,8 @@ export default function CheckInPage() {
         formData.append('clinicianNotes', notes.trim())
       }
 
-      // POST to Express backend -> forwards to ML FastAPI -> saves to MongoDB
-      const res = await fetch(`${API_BASE}/patients/checkins`, {
+      // POST to Express backend / Next.js API -> forwards to ML FastAPI -> saves to MongoDB / SQLite
+      const res = await fetch(`${getApiBase()}/patients/checkins`, {
         method: 'POST',
         body: formData,
       })

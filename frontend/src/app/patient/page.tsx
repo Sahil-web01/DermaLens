@@ -23,9 +23,9 @@ import {
   RefreshCw,
 } from 'lucide-react'
 import { ChoosePhysicianModal } from '@/components/patient/choose-physician-modal'
+import { getApiBase, resolvePhotoUrl } from '@/lib/apiConfig'
+import { getBackendAuthHeaders } from '@/lib/backendSession'
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api'
-const BACKEND_BASE = API_BASE.replace(/\/api$/, '')
 
 interface CheckInRecord {
   _id: string
@@ -62,7 +62,8 @@ export default function PatientDashboard() {
       const email = session?.user?.email
       const name = session?.user?.name
       const query = email ? `?email=${encodeURIComponent(email)}&name=${encodeURIComponent(name || '')}` : ''
-      const res = await fetch(`${API_BASE}/patients/timeline${query}`)
+      const headers = getBackendAuthHeaders(session)
+      const res = await fetch(`${getApiBase()}/patients/timeline${query}`, { headers })
       if (res.ok) {
         const data = await res.json()
         if (data.patient) setPatient(data.patient)
@@ -87,7 +88,7 @@ export default function PatientDashboard() {
     setActionNotice(null)
     try {
       const idOrEndpoint = patient?._id || 'patient-consent'
-      const res = await fetch(`${API_BASE}/patients/${idOrEndpoint}/patient-consent`, {
+      const res = await fetch(`${getApiBase()}/patients/${idOrEndpoint}/patient-consent`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -116,7 +117,7 @@ export default function PatientDashboard() {
     setActionNotice(null)
     try {
       const idOrEndpoint = patient?._id || 'patient-consent'
-      const res = await fetch(`${API_BASE}/patients/${idOrEndpoint}/patient-consent`, {
+      const res = await fetch(`${getApiBase()}/patients/${idOrEndpoint}/patient-consent`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -144,7 +145,7 @@ export default function PatientDashboard() {
     setActionNotice(null)
     try {
       const idOrEndpoint = patient?._id || 'request-doctor'
-      const res = await fetch(`${API_BASE}/patients/${idOrEndpoint}/request-doctor`, {
+      const res = await fetch(`${getApiBase()}/patients/${idOrEndpoint}/request-doctor`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -175,7 +176,7 @@ export default function PatientDashboard() {
     setActionNotice(null)
     try {
       const idOrEndpoint = patient?._id || 'release-doctor'
-      const res = await fetch(`${API_BASE}/patients/${idOrEndpoint}/release-doctor`, {
+      const res = await fetch(`${getApiBase()}/patients/${idOrEndpoint}/release-doctor`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -196,6 +197,7 @@ export default function PatientDashboard() {
       setActionLoading(false)
     }
   }
+
 
   const latestCheckIn = timeline.length > 0 ? timeline[timeline.length - 1] : null
   const assignmentStatus = patient?.assignmentStatus || (patient?.assignedClinicianId ? 'assigned' : 'unassigned')
@@ -493,8 +495,9 @@ export default function PatientDashboard() {
                       {item.photoUrl ? (
                         /* eslint-disable-next-line @next/next/no-img-element */
                         <img
-                          src={item.photoUrl.startsWith('http') ? item.photoUrl : `${BACKEND_BASE}${item.photoUrl}`}
+                          src={resolvePhotoUrl(item.photoUrl)}
                           alt="Wound site"
+
                           className="h-16 w-16 rounded-lg object-cover border border-border bg-muted flex-shrink-0"
                           onError={(e) => {
                             (e.target as HTMLElement).style.display = 'none'

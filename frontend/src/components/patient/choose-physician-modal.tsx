@@ -5,8 +5,8 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
 import { Stethoscope, CheckCircle2, UserPlus, X, AlertCircle, ShieldCheck } from 'lucide-react'
+import { getApiBase } from '@/lib/apiConfig'
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api'
 
 interface ClinicianInfo {
   id: string
@@ -45,7 +45,8 @@ export function ChoosePhysicianModal({
       setLoading(true)
       setError(null)
       try {
-        const res = await fetch(`${API_BASE}/patients/clinicians`)
+        const res = await fetch(`${getApiBase()}/patients/clinicians`)
+
         if (res.ok) {
           const json = await res.json()
           setClinicians(json.data || [])

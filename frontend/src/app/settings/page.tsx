@@ -22,6 +22,7 @@ import {
   Camera,
   Cpu,
 } from 'lucide-react'
+import { getApiBase } from '@/lib/apiConfig'
 
 export default function SettingsPage() {
   const { data: session } = useSession()
@@ -43,9 +44,9 @@ export default function SettingsPage() {
 
   useEffect(() => {
     async function checkHealth() {
-      // 1. Check Backend
+      // 1. Check Backend API
       try {
-        const res = await fetch('http://localhost:5000/api/clinician/stats')
+        const res = await fetch(`${getApiBase()}/clinician/stats`)
         setBackendStatus(res.ok ? 'online' : 'offline')
       } catch {
         setBackendStatus('offline')
