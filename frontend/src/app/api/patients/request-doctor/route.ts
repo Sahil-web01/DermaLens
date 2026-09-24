@@ -47,12 +47,18 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, message: 'Patient not found' }, { status: 404 })
     }
 
-    const doctor = clinicianId ? await prisma.user.findUnique({ where: { id: clinicianId } }) : null
+    const doctor = clinicianId
+      ? await prisma.user.findFirst({
+          where: {
+            OR: [{ id: clinicianId }, { email: clinicianId }],
+          },
+        })
+      : await prisma.user.findFirst({ where: { role: 'CLINICIAN' } })
 
-    if (clinicianId) {
+    if (doctor) {
       await prisma.user.update({
         where: { id: patient.id },
-        data: { assignedClinicianId: clinicianId },
+        data: { assignedClinicianId: doctor.id },
       })
     }
 

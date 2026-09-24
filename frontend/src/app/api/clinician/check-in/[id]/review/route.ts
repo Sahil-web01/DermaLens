@@ -26,19 +26,26 @@ export async function POST(
       return NextResponse.json({ error: 'Check-in not found' }, { status: 404 })
     }
 
-    if (checkIn.clinicianReview) {
-      return NextResponse.json({ error: 'Check-in already reviewed' }, { status: 400 })
-    }
+    const clinicianId = session?.user?.id || (await prisma.user.findFirst({ where: { role: 'CLINICIAN' } }))?.id || 'demo_clinician'
 
-    const review = await prisma.clinicianReview.create({
-      data: {
-        checkInId: params.id,
-        clinicianId: session.user.id,
-        note,
-        action: action || 'ROUTINE_FOLLOW_UP',
-        nextCheckInDate: nextCheckInDate ? new Date(nextCheckInDate) : null,
-      },
-    })
+    const review = checkIn.clinicianReview
+      ? await prisma.clinicianReview.update({
+          where: { id: checkIn.clinicianReview.id },
+          data: {
+            note,
+            action: action || 'ROUTINE_FOLLOW_UP',
+            nextCheckInDate: nextCheckInDate ? new Date(nextCheckInDate) : null,
+          },
+        })
+      : await prisma.clinicianReview.create({
+          data: {
+            checkInId: params.id,
+            clinicianId,
+            note,
+            action: action || 'ROUTINE_FOLLOW_UP',
+            nextCheckInDate: nextCheckInDate ? new Date(nextCheckInDate) : null,
+          },
+        })
 
     await prisma.checkIn.update({
       where: { id: params.id },

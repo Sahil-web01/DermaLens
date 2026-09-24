@@ -51,13 +51,19 @@ async function handleRequestDoctor(request: NextRequest, targetId?: string) {
       return NextResponse.json({ success: false, message: 'Patient not found' }, { status: 404 })
     }
 
-    const doctor = clinicianId ? await prisma.user.findUnique({ where: { id: clinicianId } }) : null
+    const doctor = clinicianId
+      ? await prisma.user.findFirst({
+          where: {
+            OR: [{ id: clinicianId }, { email: clinicianId }],
+          },
+        })
+      : await prisma.user.findFirst({ where: { role: 'CLINICIAN' } })
 
-    // Set assigned clinician or pending request
-    if (clinicianId) {
+    // Set assigned clinician
+    if (doctor) {
       await prisma.user.update({
         where: { id: patient.id },
-        data: { assignedClinicianId: clinicianId },
+        data: { assignedClinicianId: doctor.id },
       })
     }
 

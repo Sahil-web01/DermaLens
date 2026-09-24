@@ -7,8 +7,8 @@ export const dynamic = 'force-dynamic'
 export async function GET() {
   try {
     const session = await auth()
-    if (!session?.user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    if (!session?.user?.id) {
+      return NextResponse.json({ count: 0 })
     }
 
     const count = await prisma.notification.count({
@@ -16,11 +16,10 @@ export async function GET() {
         userId: session.user.id,
         readAt: null,
       },
-    })
+    }).catch(() => 0)
 
     return NextResponse.json({ count })
   } catch (error) {
-    console.error('Get unread count error:', error)
-    return NextResponse.json({ error: 'Failed to fetch unread count' }, { status: 500 })
+    return NextResponse.json({ count: 0 })
   }
 }

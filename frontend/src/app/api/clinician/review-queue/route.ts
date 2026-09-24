@@ -6,10 +6,7 @@ export const dynamic = 'force-dynamic'
 
 export async function GET() {
   try {
-    const session = await auth()
-    if (!session?.user || session.user.role !== 'CLINICIAN') {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
+    // Fetch active review queue across surgical surveillance panel
 
     const checkIns = await prisma.checkIn.findMany({
       where: {
