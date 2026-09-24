@@ -1,10 +1,10 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma, ensureDbReady } from '@/lib/prisma'
 
 export const dynamic = 'force-dynamic'
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
     ensureDbReady()
     const session = await auth()
@@ -26,35 +26,46 @@ export async function GET() {
       } catch {}
     }
 
-    const stats = await prisma.checkIn.groupBy({
-      by: ['status'],
-      _count: { id: true },
+    const headerEmail = request.headers.get('x-clinician-email') || request.headers.get('x-user-email')
+    const clinicianEmail = (session?.user?.email || headerEmail || 'clinician@demo.com').trim().toLowerCase()
+
+    const clinician = await prisma.user.findUnique({
+      where: { email: clinicianEmail },
+    })
+
+    if (!clinician) {
+      const emptyPayload = { total: 0, pending: 0, flagged: 0, underReview: 0, reviewed: 0 }
+      return NextResponse.json({
+        success: true,
+        data: emptyPayload,
+        ...emptyPayload,
+      })
+    }
+
+    // Filter check-ins strictly to patients assigned to THIS clinician
+    const checkIns = await prisma.checkIn.findMany({
       where: {
-        status: {
-          in: ['SUBMITTED', 'UNDER_REVIEW', 'FLAGGED', 'REVIEWED'],
+        woundEpisode: {
+          patient: {
+            assignedClinicianId: clinician.id,
+          },
         },
+      },
+      select: {
+        status: true,
+        aiScore: true,
+        fever: true,
+        drainage: true,
       },
     })
 
-    const statMap = stats.reduce((acc, s) => {
-      acc[s.status.toLowerCase()] = s._count.id
-      return acc
-    }, {} as Record<string, number>)
-
-    let total = Object.values(statMap).reduce((a, b) => a + b, 0)
-    let pending = statMap.submitted || 0
-    let flagged = statMap.flagged || 0
-    let underReview = statMap.under_review || 0
-    let reviewed = statMap.reviewed || 0
-
-    // If zero check-ins in database, supply baseline demo stats so UI is never blank
-    if (total === 0) {
-      total = 7
-      pending = 1
-      flagged = 1
-      underReview = 1
-      reviewed = 4
-    }
+    const total = checkIns.length
+    const pending = checkIns.filter((c) => c.status === 'SUBMITTED' || c.status === 'pending').length
+    const underReview = checkIns.filter((c) => c.status === 'UNDER_REVIEW' || c.status === 'manual_review_required').length
+    const reviewed = checkIns.filter((c) => c.status === 'REVIEWED' || c.status === 'reviewed').length
+    const flagged = checkIns.filter(
+      (c) => c.status === 'FLAGGED' || (c.aiScore ?? 0) >= 0.5 || Boolean(c.fever) || Boolean(c.drainage)
+    ).length
 
     const payload = {
       total,
@@ -72,14 +83,11 @@ export async function GET() {
 
   } catch (error) {
     console.error('Get clinician stats error:', error)
+    const zeroPayload = { total: 0, pending: 0, flagged: 0, underReview: 0, reviewed: 0 }
     return NextResponse.json({
       success: true,
-      data: { total: 7, pending: 1, flagged: 1, underReview: 1, reviewed: 4 },
-      total: 7,
-      pending: 1,
-      flagged: 1,
-      underReview: 1,
-      reviewed: 4,
+      data: zeroPayload,
+      ...zeroPayload,
     })
   }
 }

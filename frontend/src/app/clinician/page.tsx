@@ -283,8 +283,14 @@ export default function ClinicianDashboard() {
             <Card>
               <CardContent className="py-16 text-center text-muted-foreground">
                 <CheckCircle2 className="mx-auto h-12 w-12 text-emerald-500 mb-3" />
-                <h3 className="text-lg font-semibold text-foreground">Queue is clear!</h3>
-                <p className="text-sm text-muted-foreground mt-1">No unreviewed check-ins matching this filter.</p>
+                <h3 className="text-lg font-semibold text-foreground">
+                  {queue.length === 0 ? 'No Patients in Your Care Cohort' : 'Queue is clear!'}
+                </h3>
+                <p className="text-sm text-muted-foreground mt-1">
+                  {queue.length === 0
+                    ? 'You currently have no patients assigned to your surgical cohort. When patients select you as their attending surgeon or are assigned to you, their wound check-ins will appear here.'
+                    : 'No unreviewed check-ins matching this filter.'}
+                </p>
               </CardContent>
             </Card>
           ) : (

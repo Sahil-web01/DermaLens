@@ -24,20 +24,29 @@ export async function GET(request: NextRequest) {
       } catch {}
     }
 
-    const clinicianEmail = session?.user?.email || 'clinician@demo.com'
+    const headerEmail = request.headers.get('x-clinician-email') || request.headers.get('x-user-email')
+    const clinicianEmail = (session?.user?.email || headerEmail || 'clinician@demo.com').trim().toLowerCase()
     const clinician = await prisma.user.findUnique({
       where: { email: clinicianEmail },
     })
 
-    // Fetch check-ins for assigned patients
-    let checkIns = await prisma.checkIn.findMany({
-      where: clinician ? {
+    if (!clinician) {
+      return NextResponse.json({
+        success: true,
+        count: 0,
+        data: [],
+      })
+    }
+
+    // Fetch check-ins strictly for patients assigned to THIS clinician's cohort
+    const checkIns = await prisma.checkIn.findMany({
+      where: {
         woundEpisode: {
           patient: {
             assignedClinicianId: clinician.id,
           },
         },
-      } : {},
+      },
       include: {
         woundEpisode: {
           include: {
@@ -48,22 +57,6 @@ export async function GET(request: NextRequest) {
       },
       orderBy: { capturedAt: 'desc' },
     })
-
-    // Fallback: if no check-ins found specifically for this clinician, show all active check-ins
-    if (!checkIns || checkIns.length === 0) {
-      checkIns = await prisma.checkIn.findMany({
-        include: {
-          woundEpisode: {
-            include: {
-              patient: true,
-            },
-          },
-          clinicianReview: true,
-        },
-        orderBy: { capturedAt: 'desc' },
-        take: 20,
-      })
-    }
 
     const queue = checkIns.map((c) => {
       const p = c.woundEpisode.patient
