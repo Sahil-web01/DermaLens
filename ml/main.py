@@ -42,9 +42,9 @@ async def load_model_and_config():
             
         print("Loading MobileNetV2 model...")
         model = tf.keras.models.load_model(MODEL_PATH)
-        print("✅ DermaLens AI Model loaded successfully!")
+        print("[OK] DermaLens AI Model loaded successfully!")
     except Exception as e:
-        print(f"❌ Error loading model/config: {e}")
+        print(f"[ERROR] Error loading model/config: {e}")
 
 # 4. Preprocessing Function (Replicating your Kaggle logic)
 def prepare_image(pil_image):
@@ -75,36 +75,73 @@ def prepare_image(pil_image):
     # Clip values to valid pixel range
     return tf.clip_by_value(image, 0.0, 255.0).numpy()
 
-# 5. Prediction Endpoint
-@app.post("/analyze-wound")
-async def analyze_wound(file: UploadFile = File(...)):
-    if not file.content_type.startswith("image/"):
+# Helper function for running model inference on image bytes
+def run_model_inference(contents):
+    if model is None:
+        raise RuntimeError("Model is not loaded. Please ensure model weights exist.")
+
+    image = Image.open(io.BytesIO(contents)).convert("RGB")
+    processed_img = prepare_image(image)
+    input_tensor = np.expand_dims(processed_img, axis=0)
+
+    prediction = model.predict(input_tensor)
+    concern_score = float(prediction[0][0])
+    is_elevated = concern_score > 0.50
+
+    return round(concern_score, 4), is_elevated
+
+# Health Check Endpoint
+@app.get("/health")
+async def health_check():
+    return {
+        "status": "healthy" if model is not None else "degraded",
+        "service": "DermaLens AI Inference Service",
+        "model_loaded": model is not None,
+        "version": "1.0.0"
+    }
+
+# 5. Microservice Contract Endpoint (/predict)
+@app.post("/predict")
+async def predict(file: UploadFile = File(...)):
+    """
+    Standard microservice contract endpoint.
+    Accepts multipart/form-data with an image file and returns:
+    {
+        "predicted_class": "Elevated Concern" | "Low Concern",
+        "concern_score": 0.84,
+        "model_version": "v1.0"
+    }
+    """
+    if not file.content_type or not file.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="File must be an image.")
 
     try:
-        # Read and convert the uploaded image
         contents = await file.read()
-        image = Image.open(io.BytesIO(contents)).convert("RGB")
-        
-        # Preprocess the image
-        processed_img = prepare_image(image)
-        
-        # Add batch dimension -> Shape: (1, 224, 224, 3)
-        input_tensor = np.expand_dims(processed_img, axis=0)
-        
-        # Run Inference
-        prediction = model.predict(input_tensor)
-        concern_score = float(prediction[0][0])
-        
-        # Apply the highly-tuned 0.50 threshold for clinical safety
-        is_elevated = concern_score > 0.50
-        
-        # Return structured JSON for the frontend
+        concern_score, is_elevated = run_model_inference(contents)
+
+        return {
+            "predicted_class": "Elevated Concern" if is_elevated else "Low Concern",
+            "concern_score": concern_score,
+            "model_version": "v1.0"
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+# 6. Legacy / Extended Endpoint (/analyze-wound)
+@app.post("/analyze-wound")
+async def analyze_wound(file: UploadFile = File(...)):
+    if not file.content_type or not file.content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="File must be an image.")
+
+    try:
+        contents = await file.read()
+        concern_score, is_elevated = run_model_inference(contents)
+
         return {
             "status": "success",
             "filename": file.filename,
             "predictions": {
-                "concern_score": round(concern_score, 4),
+                "concern_score": concern_score,
                 "assessment_class": "Medium/High Concern" if is_elevated else "Low Concern",
                 "requires_clinical_review": is_elevated
             },
@@ -113,6 +150,5 @@ async def analyze_wound(file: UploadFile = File(...)):
                 "warning": "This is a triage support tool, not a diagnostic device."
             }
         }
-        
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

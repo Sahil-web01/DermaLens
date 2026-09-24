@@ -1,0 +1,71 @@
+import { auth } from '@/lib/auth'
+import { NextResponse } from 'next/server'
+
+export default auth((req) => {
+  const { pathname } = req.nextUrl
+  const isLoggedIn = !!req.auth
+  const userRole = req.auth?.user?.role
+
+  // Allow static files, auth endpoints, and public landing/login pages
+  const isPublicRoute =
+    pathname === '/' ||
+    pathname.startsWith('/login') ||
+    pathname.startsWith('/api/auth')
+
+  // 1. Unauthenticated request protection
+  if (!isLoggedIn && !isPublicRoute) {
+    // Return 401 JSON error for API calls
+    if (pathname.startsWith('/api')) {
+      return NextResponse.json(
+        { error: 'Unauthorized. Please sign in to access this resource.' },
+        { status: 401 }
+      )
+    }
+
+    // Redirect to login page for browser navigation
+    const loginUrl = new URL('/login', req.nextUrl.origin)
+    loginUrl.searchParams.set('callbackUrl', pathname)
+    return NextResponse.redirect(loginUrl)
+  }
+
+  // 2. If logged in and visiting /login or root, redirect to proper role portal
+  if (isLoggedIn && (pathname === '/login' || pathname === '/')) {
+    if (userRole === 'PATIENT') {
+      return NextResponse.redirect(new URL('/patient', req.nextUrl.origin))
+    } else if (userRole === 'CLINICIAN') {
+      return NextResponse.redirect(new URL('/clinician', req.nextUrl.origin))
+    }
+  }
+
+  // 3. Role-based isolation: Patients cannot access clinician routes or data
+  if (isLoggedIn && userRole !== 'CLINICIAN') {
+    if (pathname.startsWith('/clinician')) {
+      return NextResponse.redirect(new URL('/patient', req.nextUrl.origin))
+    }
+    if (pathname.startsWith('/api/clinician')) {
+      return NextResponse.json(
+        { error: 'Forbidden. Clinician privileges required.' },
+        { status: 403 }
+      )
+    }
+  }
+
+  // 4. Role-based isolation: Clinicians cannot access patient check-in directly
+  if (isLoggedIn && userRole !== 'PATIENT') {
+    if (pathname.startsWith('/patient')) {
+      return NextResponse.redirect(new URL('/clinician', req.nextUrl.origin))
+    }
+    if (pathname.startsWith('/api/patient')) {
+      return NextResponse.json(
+        { error: 'Forbidden. Patient privileges required.' },
+        { status: 403 }
+      )
+    }
+  }
+
+  return NextResponse.next()
+})
+
+export const config = {
+  matcher: ['/((?!api/auth|_next/static|_next/image|favicon.ico|uploads).*)'],
+}

@@ -71,7 +71,7 @@ const checkInSchema = new mongoose.Schema(
     reviewStatus: {
       type: String,
       enum: {
-        values: ['pending', 'reviewed', 'escalated'],
+        values: ['pending', 'reviewed', 'escalated', 'manual_review_required', 'retake_requested'],
         message: '{VALUE} is not a valid review status',
       },
       default: 'pending',
@@ -87,6 +87,9 @@ const checkInSchema = new mongoose.Schema(
     timestamps: true,
   }
 );
+
+// Fast chronological queries for patient timeline
+checkInSchema.index({ patientId: 1, capturedAt: 1 });
 
 const CheckIn = mongoose.model('CheckIn', checkInSchema);
 

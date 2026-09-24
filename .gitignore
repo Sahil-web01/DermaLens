@@ -55,3 +55,15 @@ Thumbs.db
 
 # Turbo
 .turbo
+
+# Python / ML
+__pycache__/
+*.pyc
+
+# Local Uploads
+backend/uploads/*
+!backend/uploads/.gitkeep
+
+# SQLite database
+*.db
+*.db-journal

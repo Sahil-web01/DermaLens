@@ -2,45 +2,59 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 
-const uploadDirectory = process.env.UPLOAD_DIR || 'uploads';
+// Folder where uploaded images will be stored
+const uploadDir = process.env.UPLOAD_DIR || 'uploads';
 
-// Ensure upload directory exists
-if (!fs.existsSync(uploadDirectory)) {
-  fs.mkdirSync(uploadDirectory, { recursive: true });
+// Make sure the uploads folder exists
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir, { recursive: true });
 }
 
-// Multer disk storage configuration
+// Configure how files are saved to disk
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    cb(null, uploadDirectory);
+    cb(null, uploadDir);
   },
   filename: (req, file, cb) => {
     const ext = path.extname(file.originalname).toLowerCase();
-    const baseName = path.basename(file.originalname, ext).replace(/[^a-zA-Z0-9]/g, '-');
-    const uniqueSuffix = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
-    cb(null, `${baseName}-${uniqueSuffix}${ext}`);
+    const cleanName = path.basename(file.originalname, ext).replace(/[^a-zA-Z0-9]/g, '-');
+    const uniqueId = `${Date.now()}-${Math.round(Math.random() * 1e6)}`;
+    cb(null, `${cleanName}-${uniqueId}${ext}`);
   },
 });
 
-// Allow only image files (jpeg, jpg, png, webp)
+// Accept only valid image files
 const fileFilter = (req, file, cb) => {
-  const allowedMimeTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
-  if (allowedMimeTypes.includes(file.mimetype)) {
+  const allowed = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+  if (allowed.includes(file.mimetype)) {
     cb(null, true);
   } else {
-    cb(new Error('Invalid file type. Only JPEG, PNG, and WebP images are allowed.'), false);
+    cb(new Error('Only JPEG, PNG, and WebP images are allowed'), false);
   }
 };
 
-// 10MB limit per image
-const limits = {
-  fileSize: 10 * 1024 * 1024,
-};
-
+// Limit uploads to 10MB
 export const upload = multer({
   storage,
   fileFilter,
-  limits,
+  limits: { fileSize: 10 * 1024 * 1024 },
 });
+
+// Middleware that accepts 'photo', 'image', or 'file' form field
+export const uploadSingleImage = (req, res, next) => {
+  const handler = upload.fields([
+    { name: 'photo', maxCount: 1 },
+    { name: 'image', maxCount: 1 },
+    { name: 'file', maxCount: 1 },
+  ]);
+
+  handler(req, res, (err) => {
+    if (err) return next(err);
+    if (req.files) {
+      req.file = req.files.photo?.[0] || req.files.image?.[0] || req.files.file?.[0];
+    }
+    next();
+  });
+};
 
 export default upload;
