@@ -74,14 +74,12 @@ const seedDatabase = async () => {
     ensureDemoImages(uploadDir);
     console.log('[Seeder] Demo images ready in:', uploadDir);
 
-    // Clean existing seed data
-    console.log('[Seeder] Clearing previous demo data...');
-    const demoMRNs = ['MRN-2026-001', 'MRN-2026-002', 'MRN-2026-003'];
-    const existingPatients = await Patient.find({ mrn: { $in: demoMRNs } });
-    const existingPatientIds = existingPatients.map((p) => p._id);
-
-    await CheckIn.deleteMany({ patientId: { $in: existingPatientIds } });
-    await Patient.deleteMany({ mrn: { $in: demoMRNs } });
+    // Clean existing data - delete all non-demo users and non-demo records
+    console.log('[Seeder] Clearing previous data...');
+    await CheckIn.deleteMany({});
+    await Patient.deleteMany({});
+    await Notification.deleteMany({});
+    await User.deleteMany({ email: { $nin: ['clinician@demo.com', 'clinician2@demo.com', 'patient@demo.com'] } });
 
     // Demo clinician accounts (each sees only assigned patients)
     console.log('[Seeder] Creating demo clinician users...');

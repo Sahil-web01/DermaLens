@@ -6,6 +6,17 @@ const prisma = new PrismaClient();
 async function main() {
   console.log('Seeding SQLite database for NextAuth demo accounts...');
 
+  const demoEmails = ['patient@demo.com', 'clinician@demo.com', 'clinician2@demo.com'];
+
+  // Purge all non-demo data
+  await prisma.notification.deleteMany({});
+  await prisma.clinicianReview.deleteMany({});
+  await prisma.checkIn.deleteMany({});
+  await prisma.woundEpisode.deleteMany({});
+  await prisma.user.deleteMany({
+    where: { email: { notIn: demoEmails } }
+  });
+
   const hashedPassword = await bcrypt.hash('demo123', 10);
 
   // 1. Patient Demo User
