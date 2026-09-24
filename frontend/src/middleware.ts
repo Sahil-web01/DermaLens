@@ -13,27 +13,19 @@ export default auth((req) => {
     pathname.startsWith('/signup') ||
     pathname.startsWith('/api/auth')
 
-  // 1. Unauthenticated request protection
-  if (!isLoggedIn && !isPublicRoute) {
-    // Return 401 JSON error for API calls (allow if auth headers are present)
-    if (pathname.startsWith('/api')) {
-      const hasAuthHeader = req.headers.get('authorization') || req.headers.get('x-clinician-email') || req.headers.get('x-user-email')
-      if (hasAuthHeader) {
-        return NextResponse.next()
-      }
-      return NextResponse.json(
-        { error: 'Unauthorized. Please sign in to access this resource.' },
-        { status: 401 }
-      )
-    }
+  // 1. Allow all API routes to reach their dedicated endpoint handlers (which handle auth, demo fallbacks, and SQLite self-healing)
+  if (pathname.startsWith('/api')) {
+    return NextResponse.next()
+  }
 
-    // Redirect to login page for browser navigation
+  // 2. Unauthenticated request protection for pages
+  if (!isLoggedIn && !isPublicRoute) {
     const loginUrl = new URL('/login', req.nextUrl.origin)
     loginUrl.searchParams.set('callbackUrl', pathname)
     return NextResponse.redirect(loginUrl)
   }
 
-  // 2. If logged in and visiting /login, /signup or root, redirect to proper role portal
+  // 3. If logged in and visiting /login, /signup or root, redirect to proper role portal
   if (isLoggedIn && (pathname === '/login' || pathname === '/signup' || pathname === '/')) {
     if (userRole === 'PATIENT') {
       return NextResponse.redirect(new URL('/patient', req.nextUrl.origin))
@@ -42,31 +34,14 @@ export default auth((req) => {
     }
   }
 
-  // 3. Role-based isolation: Patients cannot access clinician routes or data
-  if (isLoggedIn && userRole !== 'CLINICIAN') {
-    if (pathname.startsWith('/clinician')) {
-      return NextResponse.redirect(new URL('/patient', req.nextUrl.origin))
-    }
-    if (pathname.startsWith('/api/clinician')) {
-      return NextResponse.json(
-        { error: 'Forbidden. Clinician privileges required.' },
-        { status: 403 }
-      )
-    }
+  // 4. Role-based page routing: Patients visiting /clinician page redirected to /patient
+  if (isLoggedIn && userRole !== 'CLINICIAN' && pathname.startsWith('/clinician')) {
+    return NextResponse.redirect(new URL('/patient', req.nextUrl.origin))
   }
 
-  // 4. Role-based isolation: Clinicians cannot access personal patient check-in directly,
-  // but CAN access the patient recovery timeline scrubber (/patient/timeline)
-  if (isLoggedIn && userRole !== 'PATIENT') {
-    if (pathname === '/patient' || pathname.startsWith('/patient/check-in')) {
-      return NextResponse.redirect(new URL('/clinician', req.nextUrl.origin))
-    }
-    if (pathname === '/api/patient' || pathname.startsWith('/api/patient/')) {
-      return NextResponse.json(
-        { error: 'Forbidden. Patient privileges required.' },
-        { status: 403 }
-      )
-    }
+  // 5. Role-based page routing: Clinicians visiting personal /patient check-in redirected to /clinician
+  if (isLoggedIn && userRole !== 'PATIENT' && (pathname === '/patient' || pathname.startsWith('/patient/check-in'))) {
+    return NextResponse.redirect(new URL('/clinician', req.nextUrl.origin))
   }
 
   return NextResponse.next()

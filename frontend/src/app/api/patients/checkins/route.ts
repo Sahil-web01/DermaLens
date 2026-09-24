@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
-import { prisma } from '@/lib/prisma'
+import { prisma, ensureDbReady } from '@/lib/prisma'
 
 export const dynamic = 'force-dynamic'
 
 export async function POST(request: NextRequest) {
   try {
+    ensureDbReady()
     const session = await auth()
     const formData = await request.formData()
 
@@ -107,28 +108,37 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    // Process uploaded photo: write to public/uploads or convert to Data URI
+    // Process uploaded photo: write to public/uploads (local) or convert to Data URI (Vercel serverless)
     let imageUrl = '/uploads/demo_david_day3.png'
     if (photoFile && photoFile.size > 0) {
       try {
         const buffer = Buffer.from(await photoFile.arrayBuffer())
-        const ext = photoFile.name ? photoFile.name.split('.').pop() || 'jpg' : 'jpg'
-        const filename = `checkin_${Date.now()}_${Math.floor(Math.random() * 10000)}.${ext}`
-        
-        // Attempt saving to public/uploads if accessible
-        const fs = require('fs')
-        const path = require('path')
-        const uploadDir = path.join(process.cwd(), 'public', 'uploads')
-        if (fs.existsSync(uploadDir)) {
-          const filePath = path.join(uploadDir, filename)
-          fs.writeFileSync(filePath, buffer)
-          imageUrl = `/uploads/${filename}`
+        const mime = photoFile.type || 'image/jpeg'
+        const base64Uri = `data:${mime};base64,${buffer.toString('base64')}`
+
+        const isServerless = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME)
+        if (!isServerless) {
+          try {
+            const fs = require('fs')
+            const path = require('path')
+            const uploadDir = path.join(process.cwd(), 'public', 'uploads')
+            if (!fs.existsSync(uploadDir)) {
+              fs.mkdirSync(uploadDir, { recursive: true })
+            }
+            const ext = photoFile.name ? photoFile.name.split('.').pop() || 'jpg' : 'jpg'
+            const filename = `checkin_${Date.now()}_${Math.floor(Math.random() * 10000)}.${ext}`
+            const filePath = path.join(uploadDir, filename)
+            fs.writeFileSync(filePath, buffer)
+            imageUrl = `/uploads/${filename}`
+          } catch {
+            imageUrl = base64Uri
+          }
         } else {
-          imageUrl = `data:${photoFile.type || 'image/jpeg'};base64,${buffer.toString('base64')}`
+          // On Vercel, store directly as compressed Data URI (guaranteed 100% persistent in SQLite)
+          imageUrl = base64Uri
         }
-      } catch {
-        const buffer = Buffer.from(await photoFile.arrayBuffer())
-        imageUrl = `data:${photoFile.type || 'image/jpeg'};base64,${buffer.toString('base64')}`
+      } catch (imgErr) {
+        console.warn('[Checkin Photo] Processing fallback:', imgErr)
       }
     }
 

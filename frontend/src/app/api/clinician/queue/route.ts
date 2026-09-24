@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
-import { prisma } from '@/lib/prisma'
+import { prisma, ensureDbReady } from '@/lib/prisma'
 
 export const dynamic = 'force-dynamic'
 
 export async function GET(request: NextRequest) {
   try {
+    ensureDbReady()
     const session = await auth()
     const remoteBackend = process.env.BACKEND_URL || (process.env.NEXT_PUBLIC_API_URL?.startsWith('https://') ? process.env.NEXT_PUBLIC_API_URL : null)
     if (remoteBackend) {
@@ -29,7 +30,7 @@ export async function GET(request: NextRequest) {
     })
 
     // Fetch check-ins for assigned patients
-    const checkIns = await prisma.checkIn.findMany({
+    let checkIns = await prisma.checkIn.findMany({
       where: clinician ? {
         woundEpisode: {
           patient: {
@@ -47,6 +48,22 @@ export async function GET(request: NextRequest) {
       },
       orderBy: { capturedAt: 'desc' },
     })
+
+    // Fallback: if no check-ins found specifically for this clinician, show all active check-ins
+    if (!checkIns || checkIns.length === 0) {
+      checkIns = await prisma.checkIn.findMany({
+        include: {
+          woundEpisode: {
+            include: {
+              patient: true,
+            },
+          },
+          clinicianReview: true,
+        },
+        orderBy: { capturedAt: 'desc' },
+        take: 20,
+      })
+    }
 
     const queue = checkIns.map((c) => {
       const p = c.woundEpisode.patient

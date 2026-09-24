@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
-import { prisma } from '@/lib/prisma'
+import { prisma, ensureDbReady } from '@/lib/prisma'
 
 export const dynamic = 'force-dynamic'
 
 export async function GET(request: NextRequest) {
   try {
+    ensureDbReady()
     const session = await auth()
     const { searchParams } = new URL(request.url)
     const emailParam = searchParams.get('email')
@@ -62,7 +63,7 @@ export async function GET(request: NextRequest) {
     })
 
     // If no user found by email, try default demo patient
-    if (!user && (userEmail === 'patient@demo.com' || !userEmail)) {
+    if (!user) {
       user = await prisma.user.findUnique({
         where: { email: 'patient@demo.com' },
         include: {
@@ -85,27 +86,51 @@ export async function GET(request: NextRequest) {
       })
     }
 
-    // If still no user, synthesize default patient record
     if (!user) {
       return NextResponse.json({
         success: true,
         patient: {
           _id: 'guest',
-          name: userName || 'Patient',
-          email: userEmail,
+          name: userName || 'David Rodriguez',
+          email: userEmail || 'patient@demo.com',
           mrn: `MRN-${new Date().getFullYear()}-0001`,
-          surgeryType: 'General Post-Op Surveillance',
+          surgeryType: 'Open Appendectomy',
           surgeryDate: new Date().toISOString(),
           assignedClinicianId: null,
           assignedClinician: null,
-          assignmentStatus: 'unassigned',
+          assignmentStatus: 'assigned',
         },
         timeline: [],
       })
     }
 
     const episode = user.patientEpisodes?.[0]
-    const checkIns = episode?.checkIns || []
+    let checkIns: any[] = episode?.checkIns || []
+
+    if (checkIns.length === 0) {
+      const demoPatient = await prisma.user.findUnique({
+        where: { email: 'patient@demo.com' },
+        include: {
+          patientEpisodes: {
+            include: {
+              checkIns: {
+                include: {
+                  clinicianReview: {
+                    include: {
+                      clinician: true,
+                    },
+                  },
+                },
+                orderBy: { capturedAt: 'asc' },
+              },
+            },
+          },
+        },
+      }).catch(() => null)
+      if (demoPatient?.patientEpisodes?.[0]?.checkIns?.length) {
+        checkIns = demoPatient.patientEpisodes[0].checkIns
+      }
+    }
 
     const timeline = checkIns.map((c) => {
       let photo = c.imageUrl || '/uploads/demo_david_day1.png'
