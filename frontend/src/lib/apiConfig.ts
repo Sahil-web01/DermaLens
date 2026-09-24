@@ -5,11 +5,6 @@
  */
 export function getApiBase(): string {
   if (typeof window !== 'undefined') {
-    const configured = process.env.NEXT_PUBLIC_API_URL
-    // If configured with an external production HTTPS URL (e.g. Render backend), use it
-    if (configured && configured.startsWith('https://')) {
-      return configured.replace(/\/$/, '')
-    }
     // Always route through same-origin /api in browser for zero CORS, zero mixed-content,
     // and autonomous server-side fallback between Express and SQLite
     return '/api'

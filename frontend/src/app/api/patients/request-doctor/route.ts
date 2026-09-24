@@ -33,7 +33,9 @@ export async function POST(request: NextRequest) {
         })
         if (backendRes.ok) {
           const data = await backendRes.json()
-          return NextResponse.json(data)
+          if (data && data.success !== false) {
+            return NextResponse.json(data)
+          }
         }
       } catch (err) {
         console.warn('[RequestDoctor API] Remote backend error, falling back to SQLite:', err)
